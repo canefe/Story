@@ -40,18 +40,6 @@ public class CommandHandler implements CommandExecutor {
                 toggleGPT(player);
                 break;
 
-            case "setnpcrole":
-                setNPCRole(player, args);
-                break;
-
-            case "removenpcrole":
-                removeNPCRole(player, args);
-                break;
-
-            case "resetconversation":
-                resetConversation(player);
-                break;
-
             case "maketalk":
                 npcTalk(player, args);
                 break;
@@ -108,25 +96,6 @@ public class CommandHandler implements CommandExecutor {
 
         plugin.updateNpcRole(npcName, roleDescription);
         player.sendMessage(ChatColor.GRAY + "Role for NPC '" + npcName + "' set to: " + roleDescription);
-    }
-
-    private void removeNPCRole(Player player, String[] args) {
-        if (args.length < 1) {
-            player.sendMessage(ChatColor.RED + "Usage: /removenpcrole <npc name>");
-            return;
-        }
-
-        String npcName = args[0];
-        if (plugin.removeNpcRole(npcName)) {
-            player.sendMessage(ChatColor.GRAY + "Role for NPC '" + npcName + "' removed.");
-        } else {
-            player.sendMessage(ChatColor.RED + "NPC '" + npcName + "' does not have a role set.");
-        }
-    }
-
-    private void resetConversation(Player player) {
-        plugin.resetGlobalConversationHistory();
-        player.sendMessage(ChatColor.GRAY + "Conversation history reset.");
     }
 
     private void npcTalk(Player player, String[] args) {

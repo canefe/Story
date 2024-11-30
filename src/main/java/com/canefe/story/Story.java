@@ -49,20 +49,8 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
     // Map to store current NPC per player (UUID -> NPC Name)
     public Map<UUID, String> playerCurrentNPC = new HashMap<>();
 
-    // Map to store NPC roles dynamically (NPC Name -> Role Description)
-    private Map<String, String> npcRoles = new HashMap<>();
-
-    // Map to store dynamic contexts for NPCs (NPC Name -> Context String)
-    private Map<String, String> npcContexts = new HashMap<>();
-
     // List of players that disabled right-clicking start conversation
     private List<Player> disabledPlayers = new ArrayList<>();
-
-    // Map to store conversation histories for NPCs (NPC Name -> List of Conversation Messages)
-    private Map<String, List<ConversationMessage>> npcConversations = new HashMap<>();
-
-    // Shared conversation history
-    private List<ConversationMessage> conversationHistory = new ArrayList<>();
 
     private List<String> generalContexts = new ArrayList<>();
 
@@ -91,7 +79,7 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
     // Gson instance for JSON parsing
     private Gson gson = new Gson();
 
-    private NPCDataManager npcDataManager;
+    public NPCDataManager npcDataManager;
 
     public ConversationManager conversationManager;
 
@@ -133,9 +121,6 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
         // Register commands with the new CommandHandler
         CommandHandler commandHandler = new CommandHandler(this);
         getCommand("togglegpt").setExecutor(commandHandler);
-        getCommand("setnpcrole").setExecutor(commandHandler);
-        getCommand("removenpcrole").setExecutor(commandHandler);
-        getCommand("resetconversation").setExecutor(commandHandler);
         getCommand("maketalk").setExecutor(commandHandler);
         getCommand("aireload").setExecutor(commandHandler);
         getCommand("feednpc").setExecutor(commandHandler);
@@ -237,7 +222,6 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
 
 
         npcDataManager = NPCDataManager.getInstance(this);
-        loadAllNPCData();
         loadGeneralContexts();
 
         // Save default config and load OpenAI API key
@@ -261,37 +245,6 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
         }
     }
 
-    private void loadAllNPCData() {
-        File[] files = npcDataManager.getNPCDirectory().listFiles(file -> file.isFile() && file.getName().toLowerCase().endsWith(".yml"));
-
-        if (files != null) {
-            for (File file : files) {
-                FileConfiguration config = YamlConfiguration.loadConfiguration(file);
-                String npcName = file.getName().replace(".yml", "");
-
-                // Load role
-                String role = config.getString("role", "No role defined");
-                npcRoles.put(npcName, role);
-
-                // Load context
-                String context = config.getString("context", "Default context");
-                npcContexts.put(npcName, context);
-
-                // Load conversation history
-                List<Map<?, ?>> historyList = config.getMapList("conversationHistory");
-                List<ConversationMessage> conversationHistory = new ArrayList<>();
-                for (Map<?, ?> map : historyList) {
-                    String roleKey = (String) map.get("role");
-                    String content = (String) map.get("content");
-                    conversationHistory.add(new ConversationMessage(roleKey, content));
-                }
-
-                // Store the history in memory
-                npcConversations.put(npcName, conversationHistory);
-            }
-        }
-    }
-
     public void setChatEnabled(boolean enabled) {
         this.chatEnabled = enabled;
     }
@@ -300,7 +253,7 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
         return chatEnabled;
     }
 
-    public void saveNPCData(String npcName, String roleDescription, String context, List<ConversationMessage> conversationHistory) {
+    public void saveNPCData(String npcName, String roleDescription, String context, List<ConversationMessage> conversationHistory, StoryLocation location) {
         FileConfiguration config = npcDataManager.loadNPCData(npcName);
 
         // Save role and context
@@ -317,8 +270,15 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
         }
         config.set("conversationHistory", historyList);
 
+        // Save location
+        if (location != null) {
+            config.set("location.name", location.getName());
+            config.set("location.context", location.getContext()); // Assuming the context is a List<String>
+        }
+
         npcDataManager.saveNPCFile(npcName, config);
     }
+
 
 
 
@@ -363,20 +323,6 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
             player.sendMessage(ChatColor.RED + "Failed to reload configuration. Check console for details.");
             e.printStackTrace();
         }
-    }
-
-
-    public void updateNpcRole(String npcName, String roleDescription) {
-        npcRoles.put(npcName, roleDescription);
-        saveNPCData(npcName, roleDescription, npcContexts.getOrDefault(npcName, defaultContext), npcConversations.getOrDefault(npcName, new ArrayList<>()));
-    }
-
-    public boolean removeNpcRole(String npcName) {
-        return npcRoles.remove(npcName) != null;
-    }
-
-    public void resetGlobalConversationHistory() {
-        conversationHistory.clear();
     }
 
     public void sendNpcMessage(String npcName, String message) {
@@ -524,15 +470,12 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
     // Event: AsyncPlayerChatEvent
     @EventHandler
     public void onPlayerChat(AsyncPlayerChatEvent event) {
-        if (!chatEnabled) {
-            return;
-        }
 
         Player player = event.getPlayer();
         String message = event.getMessage();
 
         if (conversationManager.hasActiveConversation(player)) {
-            conversationManager.addPlayerMessage(player, message);
+            conversationManager.addPlayerMessage(player, message, chatEnabled);
         } else {
             player.sendMessage(ChatColor.RED + "You are not currently in an active conversation.");
 
