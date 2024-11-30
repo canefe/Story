@@ -105,7 +105,7 @@ public class ConversationManager {
     }
 
     // Add a player's message to the group conversation
-    public void addPlayerMessage(Player player, String message) {
+    public void addPlayerMessage(Player player, String message, boolean chatEnabled) {
         UUID playerUUID = player.getUniqueId();
         GroupConversation conversation = activeConversations.stream()
                 .filter(convo -> convo.getPlayers().contains(playerUUID))
@@ -125,6 +125,9 @@ public class ConversationManager {
         // Add the player's message to the conversation history
         conversation.addMessage(new ConversationMessage("user", playerName + ": " + message));
 
+        if (!chatEnabled) {
+            return;
+        }
         // Generate responses from all NPCs sequentially
         generateGroupNPCResponses(conversation, player);
     }
