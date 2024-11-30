@@ -1,6 +1,12 @@
 package com.canefe.story;
 
+import eu.decentsoftware.holograms.api.DHAPI;
+import eu.decentsoftware.holograms.api.holograms.Hologram;
+import net.citizensnpcs.api.CitizensAPI;
+import net.citizensnpcs.api.npc.NPC;
+import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.Location;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -72,6 +78,10 @@ public class CommandHandler implements CommandExecutor {
                 player.sendMessage(ChatColor.GRAY + "Current NPC set to: " + npcName);
                 break;
 
+            case "endconv":
+                plugin.conversationManager.endConversation(player);
+                break;
+
             default:
                 return false;
         }
@@ -125,12 +135,20 @@ public class CommandHandler implements CommandExecutor {
             return;
         }
 
-        String npcName = plugin.conversationManager.getActiveNPC(player);
+        String npcName = args[0];
 
-        // Generate the NPC response with no user message (purely AI-driven)
-        plugin.conversationManager.addNPCMessage(npcName, args[0]);
 
         player.sendMessage(ChatColor.GRAY + "You made NPC '" + npcName + "' talk using AI.");
+
+        // Fetch NPC conversation
+        GroupConversation convo = plugin.conversationManager.getActiveNPCConversation(npcName);
+        if (convo == null) {
+            player.sendMessage(ChatColor.RED + "No active conversation found for NPC '" + npcName + "'.");
+            return;
+        }
+        // get a random player name from the convo
+        Player randomPlayer = Bukkit.getPlayer(convo.getPlayers().iterator().next());
+        plugin.conversationManager.generateGroupNPCResponses(convo, randomPlayer);
     }
 
     private void reloadConfig(Player player) {
@@ -172,7 +190,20 @@ public class CommandHandler implements CommandExecutor {
         String message = String.join(" ", args);
 
         // Fetch NPC conversation history
-        plugin.addNPCMessage(npcName, message);
+        plugin.conversationManager.addNPCMessage(npcName, message);
+
+        // simulate 3s delay
+
+            Location npcPos = plugin.getNPCPos(npcName);
+            plugin.conversationManager.showThinkingHolo(npcPos, npcName);
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                int taskIdToRemove = plugin.conversationManager.getHologramTasks().get(npcName);
+                Bukkit.getScheduler().cancelTask(taskIdToRemove);
+                plugin.conversationManager.removeHologramTask(npcName);
+                DHAPI.removeHologram(plugin.getNPCUUID(npcName).toString());
+                plugin.broadcastNPCMessage(message, npcName, false, null, null, null);
+            }, 60L);
+
     }
 
 }

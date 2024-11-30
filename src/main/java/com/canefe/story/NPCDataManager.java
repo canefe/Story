@@ -9,16 +9,25 @@ import java.io.IOException;
 
 public class NPCDataManager {
 
+    private static NPCDataManager instance;
+
     private final JavaPlugin plugin;
     private final File npcDirectory;
 
-    public NPCDataManager(JavaPlugin plugin) {
+    private NPCDataManager(JavaPlugin plugin) {
         this.plugin = plugin;
         this.npcDirectory = new File(plugin.getDataFolder(), "npcs");
 
         if (!npcDirectory.exists()) {
             npcDirectory.mkdirs(); // Create the directory if it doesn't exist
         }
+    }
+
+    public static NPCDataManager getInstance(Story plugin) {
+        if (instance == null) {
+            instance = new NPCDataManager(plugin);
+        }
+        return instance;
     }
 
 

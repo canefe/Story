@@ -6,55 +6,32 @@ import java.util.*;
 
 public class NPCContextGenerator {
 
-    private static final List<String> TRAITS = Arrays.asList(
-            "brave", "cunning", "cowardly", "loyal", "deceitful", "kind", "selfish", "compassionate",
-            "apathetic", "hot-tempered", "calculating", "stubborn", "ambitious", "charismatic",
-            "reserved", "resourceful", "daring", "pessimistic", "idealistic", "practical", "scheming",
-            "patient", "impulsive"
-    );
+    private static NPCContextGenerator instance;
+    private final Story plugin;
 
-    private static final List<String> QUIRKS = Arrays.asList(
-            "hates authority", "collects useless objects", "always suspicious", "has a dark sense of humor",
-            "obsessed with cleanliness", "talks in riddles", "hoards shiny objects", "fearful of water",
-            "constantly fidgets", "addicted to gambling", "loves to sing, even at inappropriate times",
-            "refers to themselves in third person", "refuses to lie, even when they should",
-            "obsessed with documenting every detail of their life", "superstitious to the point of paranoia",
-            "obsessed with food and always snacking", "takes everything literally",
-            "constantly quotes ancient proverbs", "has an annoying laugh", "cannot resist a dare"
-    );
+    private NPCContextGenerator(Story plugin) {
+        this.plugin = plugin;
+    }
 
-    private static final List<String> MOTIVATIONS = Arrays.asList(
-            "revenge", "greed", "self-preservation", "honor", "power", "freedom", "love", "curiosity",
-            "survival", "recognition", "adventure", "family loyalty", "faith or religious duty", "justice",
-            "chaos for chaos’s sake", "personal redemption", "knowledge", "glory in battle",
-            "protecting their home", "escaping their past", "overcoming a curse or prophecy",
-            "building a legacy", "fear of being forgotten"
-    );
+    public static NPCContextGenerator getInstance(Story plugin) {
+        if (instance == null) {
+            instance = new NPCContextGenerator(plugin);
+        }
 
-    private static final List<String> FLAWS = Arrays.asList(
-            "arrogance", "naivety", "paranoia", "laziness", "recklessness", "jealousy", "short-tempered",
-            "greedy", "self-doubt", "overly trusting", "easily manipulated", "fearful", "stubborn to a fault",
-            "vengeful", "prone to lying", "overly competitive", "prideful", "obsessive",
-            "emotionally distant", "impulsive", "cruel under pressure", "haughty", "cowardly in danger",
-            "judgmental"
-    );
+        return instance;
+    }
 
-    private static final List<String> TONES = Arrays.asList(
-            "sarcastic", "blunt", "formal", "playful", "serious", "melancholic", "cheerful", "apathetic",
-            "arrogant", "cautious", "dismissive", "flirtatious", "mischievous", "pessimistic", "optimistic",
-            "passionate", "calm", "distant", "mocking", "cryptic", "eager", "conflicted", "suspicious",
-            "humorous", "desperate"
-    );
-
-    public static String generateDefaultContext(String npcName, String role, int hours, int minutes, String season, String date) {
+    public String generateDefaultContext(String npcName, String role, int hours, int minutes, String season, String date) {
         Random random = new Random();
 
         // Randomly select personality traits
-        String trait = TRAITS.get(random.nextInt(TRAITS.size()));
-        String quirk = QUIRKS.get(random.nextInt(QUIRKS.size()));
-        String motivation = MOTIVATIONS.get(random.nextInt(MOTIVATIONS.size()));
-        String flaw = FLAWS.get(random.nextInt(FLAWS.size()));
-        String tone = TONES.get(random.nextInt(TONES.size()));
+        // plugin.getTraitList() is a method that returns a list of traits
+        String trait = plugin.getTraitList().get(random.nextInt(plugin.getTraitList().size()));
+        String quirk = plugin.getQuirkList().get(random.nextInt(plugin.getQuirkList().size()));
+        String motivation = plugin.getMotivationList().get(random.nextInt(plugin.getMotivationList().size()));
+        String flaw = plugin.getFlawList().get(random.nextInt(plugin.getFlawList().size()));
+        String tone = plugin.getToneList().get(random.nextInt(plugin.getToneList().size()));
+
 
         // Construct personality description
         String personality = "This character is " + trait + ", has the quirk of " + quirk +
@@ -73,12 +50,13 @@ public class NPCContextGenerator {
                 "Responses should remain concise and consistent with the NPC’s personality, emotional state, and current context. " +
                 "In escalating scenarios (e.g., threats, demands, or violence), NPCs must prioritize self-preservation and adjust their tone to match the severity of the situation. " +
                 "They may comply, negotiate, or retaliate depending on their motivations, flaws, and emotions, but they must always act with a clear and believable sense of self-interest and survival. " +
-                "Responses must not exceed 20 words unless the personality specifically calls for elaborate speech." +
+                "Responses must not exceed 20 words." +
                 "NPCs must avoid repetitive or evasive behavior in high-stakes situations, responding directly when necessary while maintaining their distinct personality." +
-                "Take into account the name of the person you are talking to, and adjust your responses accordingly.";
+                "Take into account the name of the person you are talking to, and adjust your responses accordingly." +
+                "If player says goodbye, include [End] in response to indicate the end of the conversation.";
     }
 
-    public static String updateContext(String context, String npcName, int hours, int minutes, String season, String date) {
+    public String updateContext(String context, String npcName, int hours, int minutes, String season, String date) {
         Bukkit.getLogger().info("Updating context for NPC: " + npcName);
         context = context.replaceAll("The time is \\d{1,2}:\\d{2}", "The time is " + hours + ":" + String.format("%02d", minutes));
         context = context.replaceAll("in the \\w+", "in the " + season);

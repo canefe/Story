@@ -2,31 +2,46 @@ name: Story
 version: '1.0-SNAPSHOT'
 main: com.canefe.story.Story
 api-version: '1.21'
+depend:
+  - BetterHealthBar
+softdepend: ["PlaceholderAPI", "DecentHolograms"]
 commands:
   togglegpt:
     description: Toggles NPC chat with GPT.
     usage: /togglegpt
+    permission: story.togglegpt
   setnpcrole:
     description: Sets the role for an NPC.
     usage: /setnpcrole <npc name> <role description>
+    permission: story.setnpcrole
   removenpcrole:
     description: Removes the role for an NPC.
     usage: /removenpcrole <npc name>
+    permission: story.removenpcrole
   resetconversation:
     description: Resets the conversation history.
     usage: /resetconversation
+    permission: story.resetconversation
   maketalk:
     description: Makes an NPC say something.
     usage: /npctalk <npc name> <message>
+    permission: story.maketalk
   aireload:
     description: Reloads the AI configuration.
     usage: /ai reload
+    permission: story.aireload
   feednpc:
     description: Feeds the current NPC a message.
     usage: /feednpc <message>
+    permission: story.feednpc
   g:
     description: Makes the current npc say something.
     usage: /g <message>
+    permission: story.g
   setcurq:
     description: Sets the current npc.
     usage: /setcurq <npc>
+    permission: story.setcurq
+  endconv:
+    description: Stops all the conversations.
+    usage: /endconv
