@@ -41,6 +41,14 @@ public class GroupConversation {
         return false;
     }
 
+    public boolean removeNPC(String npcName) {
+        if (npcNames.contains(npcName)) {
+            npcNames.remove(npcName);
+            return true;
+        }
+        return false;
+    }
+
     public boolean addPlayerToConversation(Player player) {
         // Join the player to another player's conversation
         if (!players.contains(player.getUniqueId())) {

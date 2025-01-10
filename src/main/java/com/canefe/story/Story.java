@@ -13,6 +13,7 @@ import me.libraryaddict.disguise.DisguiseAPI;
 import net.citizensnpcs.api.npc.NPC;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
+import org.bukkit.Chunk;
 import org.bukkit.Location;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -36,8 +37,11 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 public final class Story extends JavaPlugin implements Listener, CommandExecutor {
 
@@ -51,6 +55,8 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
 
     // List of players that disabled right-clicking start conversation
     private List<Player> disabledPlayers = new ArrayList<>();
+
+    private List<UUID> disabledNPCs = new ArrayList<>();
 
     private List<String> generalContexts = new ArrayList<>();
 
@@ -83,10 +89,22 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
 
     public ConversationManager conversationManager;
 
+    public LocationManager locationManager;
+
+    public NPCUtils npcUtils;
+
+    public NPCManager npcManager;
+
     // PlaceholderAPI expansion String that supports color codes
 
     public String questTitle = "";
-    public String questObj = "";
+    public String questObj = "> No quests active.";
+    private String tempQuestTitle;
+
+
+    private final Map<NPC, Long> npcCooldowns = new HashMap<>();
+    private static final long COOLDOWN_TIME = 30000; // 10 seconds in milliseconds
+
 
     public static String colorize(String message) {
         return ChatColor.translateAlternateColorCodes('&', message);
@@ -131,6 +149,82 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
         // Command to hide the health bar "vanish"
         //BetterHealthBar.inst().playerManager().player("").uninject();
 
+
+        new CommandAPICommand("maketalk")
+                .withPermission("storymaker.chat.toggle")
+                .withArguments(new GreedyStringArgument("npc"))
+                .executesPlayer((player, args) -> {
+                    String npcName = (String) args.get("npc");
+                    player.sendMessage(ChatColor.GRAY + "You made NPC '" + npcName + "' talk using AI.");
+
+                    // Fetch NPC conversation
+                    GroupConversation convo = conversationManager.getActiveNPCConversation(npcName);
+                    if (convo == null) {
+                        player.sendMessage(ChatColor.RED + "No active conversation found for NPC '" + npcName + "'.");
+                        return;
+                    }
+                    // get a random player name from the convo
+                    Player randomPlayer = Bukkit.getPlayer(convo.getPlayers().iterator().next());
+                    conversationManager.generateGroupNPCResponses(convo, randomPlayer);
+                })
+                .register();
+
+        new CommandAPICommand("spawnnpc")
+                .withPermission("storymaker.npc.spawn")
+                .withArguments(new StringArgument("npc"))
+                .withArguments(new GreedyStringArgument("message"))
+                .executesPlayer((player, args) -> {
+                    String npcName = (String) args.get("npc");
+                    String message = (String) args.get("message");
+                    Location location = player.getLocation();
+                    NPCSpawner npcSpawner = new NPCSpawner(this);
+                    // Get a location that is 10 block away from the player
+                    location.add(location.getDirection().multiply(10));
+
+                    npcSpawner.spawnNPC(npcName, location, player, message);
+                })
+                .register();
+
+        new CommandAPICommand("startconv")
+                .withPermission("storymaker.conversation.start")
+                .withArguments(new PlayerArgument("player"))
+                .withArguments(new GreedyStringArgument("npc"))
+                .executesPlayer((player, args) -> {
+                    Player target = (Player) args.get("player");
+                    String npcName = (String) args.get("npc");
+                    if (target == null) {
+                        player.sendMessage(ChatColor.RED + "Player not found.");
+                        return;
+                    }
+                    if (conversationManager.isNPCInConversation(npcName)) {
+                        if (conversationManager.addPlayerToConversation(target, npcName)) {
+                            player.sendMessage(ChatColor.GRAY + "Added " + target + " to the conversation with " + npcName);
+                        } else {
+                            player.sendMessage(ChatColor.RED + "" + target + " is already in the conversation.");
+                        }
+                    } else {
+                        // Start a new conversation
+                        List<String> npcNames = new ArrayList<>();
+                        npcNames.add(npcName);
+                        conversationManager.startGroupConversation(target, npcNames);
+                    }
+                })
+                .register();
+
+        // /fendconv <player>
+        new CommandAPICommand("fendconv")
+                .withPermission("storymaker.conversation.end")
+                .withArguments(new PlayerArgument("player"))
+                .executesPlayer((player, args) -> {
+                    Player target = (Player) args.get("player");
+                    if (conversationManager.hasActiveConversation(target)) {
+                        conversationManager.endConversation(target);
+                        player.sendMessage(ChatColor.GRAY + "Ended conversation with " + target.getName());
+                    } else {
+                        player.sendMessage(ChatColor.RED + target.getName() + " is not in an active conversation.");
+                    }
+                })
+                .register();
 
         new CommandAPICommand("togglechat")
                 .withPermission("storymaker.chat.toggle")
@@ -204,10 +298,59 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
                     String npcName = (String) args.get("npc");
 
                     if (conversationManager.isNPCInConversation(npcName)) {
-                        conversationManager.addPlayerToConversation(target, npcName);
-                        player.sendMessage(ChatColor.GRAY + "Added " + target + " to the conversation with " + npcName);
+                        if (conversationManager.addPlayerToConversation(target, npcName)) {
+                            player.sendMessage(ChatColor.GRAY + "Added " + target + " to the conversation with " + npcName);
+                        } else {
+                            player.sendMessage(ChatColor.RED + "" + target + " is already in the conversation.");
+                        }
                     } else {
                         player.sendMessage(ChatColor.RED + npcName + " is not in an active conversation.");
+                    }
+                })
+                .register();
+
+
+        // New command to reset quest title and objective
+        new CommandAPICommand("resetquest")
+                .withPermission("storymaker.quest.reset")
+                .executesPlayer((player, args) -> {
+                    setQuestTitle("");
+                    setQuestObj("> No quests active.");
+                    player.sendMessage(ChatColor.GRAY + "Quest title and objective reset.");
+                })
+                .register();
+
+        // command /disablenpc <npc> // disable npc from talking
+        new CommandAPICommand("togglenpc")
+                .withPermission("storymaker.npc.disable")
+                .withArguments(new GreedyStringArgument("npc"))
+                .executesPlayer((player, args) -> {
+                    String npcName = (String) args.get("npc");
+                    if (npcDataManager.loadNPCData(npcName) != null) {
+                        if (disabledNPCs.contains(getNPCUUID(npcName))) {
+                            player.sendMessage(ChatColor.RED + "NPC " + npcName + " is already disabled. Enabling...");
+                            enableNPCTalking(npcName);
+                            return;
+                        }
+                        disableNPCTalking(npcName);
+                        player.sendMessage(ChatColor.GRAY + "Disabled " + npcName + " from talking.");
+                    } else {
+                        player.sendMessage(ChatColor.RED + "NPC " + npcName + " not found.");
+                    }
+                })
+                .register();
+
+
+        // command /toggleradiant // disable radiant conversations
+        new CommandAPICommand("toggleradiant")
+                .withPermission("storymaker.conversation.toggle")
+                .executesPlayer((player, args) -> {
+                    if (conversationManager.isRadiantEnabled()) {
+                        conversationManager.setRadiantEnabled(false);
+                        player.sendMessage(ChatColor.GRAY + "Radiant conversations disabled.");
+                    } else {
+                        conversationManager.setRadiantEnabled(true);
+                        player.sendMessage(ChatColor.GRAY + "Radiant conversations enabled.");
                     }
                 })
                 .register();
@@ -222,6 +365,15 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
 
 
         npcDataManager = NPCDataManager.getInstance(this);
+
+        locationManager = LocationManager.getInstance(this);
+
+        npcUtils = NPCUtils.getInstance(this);
+
+        npcManager = NPCManager.getInstance(this);
+
+        startProximityTask(this);
+
         loadGeneralContexts();
 
         // Save default config and load OpenAI API key
@@ -253,7 +405,15 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
         return chatEnabled;
     }
 
-    public void saveNPCData(String npcName, String roleDescription, String context, List<ConversationMessage> conversationHistory, StoryLocation location) {
+    public void disableNPCTalking(String npcName) {
+        disabledNPCs.add(getNPCUUID(npcName));
+    }
+
+    public void enableNPCTalking(String npcName) {
+        disabledNPCs.remove(getNPCUUID(npcName));
+    }
+
+    public void saveNPCData(String npcName, String roleDescription, String context, List<ConversationMessage> conversationHistory, String location) {
         FileConfiguration config = npcDataManager.loadNPCData(npcName);
 
         // Save role and context
@@ -272,8 +432,7 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
 
         // Save location
         if (location != null) {
-            config.set("location.name", location.getName());
-            config.set("location.context", location.getContext()); // Assuming the context is a List<String>
+            config.set("location", location);
         }
 
         npcDataManager.saveNPCFile(npcName, config);
@@ -336,6 +495,118 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
         return false;
     }
 
+    public void startProximityTask(Story plugin) {
+        Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            if (!conversationManager.isRadiantEnabled())
+                return;
+
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                handleProximityCheck(player);
+            }
+        }, 20L * 5, 20L * 5); // Run every second (20 ticks)
+    }
+
+
+    private void handleProximityCheck(Player player) {
+
+        //Disable if player is disabled
+        if (disabledPlayers.contains(player)) {
+            return;
+        }
+        // Get the player's current chunk
+        Chunk playerChunk = player.getLocation().getChunk();
+
+        // Check only NPCs in the same chunk or adjacent chunks
+        for (NPC npc : CitizensAPI.getNPCRegistry()) {
+            if (npc.getEntity() == null) continue;
+
+            Chunk npcChunk = npc.getEntity().getLocation().getChunk();
+            if (!isNearbyChunk(playerChunk, npcChunk)) continue;
+
+            // check if disabled
+            if (disabledNPCs.contains(npc.getUniqueId())) {
+                continue;
+            }
+
+            // Perform proximity check within a 10-block range
+            Location npcLocation = npc.getEntity().getLocation();
+            if (npcLocation.distance(player.getLocation()) <= 10) {
+                if (isOnCooldown(npc)) continue;
+                triggerRadiantConversation(npc, player);
+                updateCooldown(npc);
+            }
+        }
+    }
+
+    private boolean isOnCooldown(NPC npc) {
+        if (!npcCooldowns.containsKey(npc)) return false;
+        long currentTime = System.currentTimeMillis();
+        long remainingTime = (currentTime - npcCooldowns.get(npc));
+        boolean isOnCooldown = remainingTime < COOLDOWN_TIME;
+        return npcCooldowns.containsKey(npc) && isOnCooldown;
+    }
+
+    private void updateCooldown(NPC npc) {
+        npcCooldowns.put(npc, System.currentTimeMillis());
+    }
+
+    private void triggerRadiantConversation(NPC initiator, Player player) {
+        // Find nearby NPCs
+        List<NPC> nearbyNPCs = new ArrayList<>();
+        for (NPC npc : CitizensAPI.getNPCRegistry()) {
+            if (npc.getEntity() == null) {
+                continue;
+            }
+            if (disabledNPCs.contains(npc.getUniqueId())) {
+                continue;
+            }
+            Location npcLocation = npc.getEntity().getLocation();
+            if (npcLocation.getWorld() == player.getWorld() && npcLocation.distance(player.getLocation()) <= 15) {
+                nearbyNPCs.add(npc);
+            }
+        }
+
+        if (nearbyNPCs.isEmpty()) return;
+
+        // Select a random NPC to talk to
+        NPC target = nearbyNPCs.get(new Random().nextInt(nearbyNPCs.size()));
+
+
+        // only if they are different NPCs
+        if (target.getName().equals(initiator.getName())) {
+            return;
+        }
+        // check if the yare already in a conversation
+        if (conversationManager.isNPCInConversation(initiator.getName()) || conversationManager.isNPCInConversation(target.getName())) {
+            return;
+        }
+
+
+        // Start conversation
+        startRadiantConversation(initiator, target, player);
+    }
+
+    private void startRadiantConversation(NPC npc1, NPC npc2, Player player) {
+        // Start a conversation between two NPCs
+        List<String> npcNames = new ArrayList<>();
+        npcNames.add(npc1.getName());
+        npcNames.add(npc2.getName());
+        conversationManager.startRadiantConversation(npcNames);
+    }
+
+    public boolean isNPCDisabled(String npcName) {
+        return disabledNPCs.contains(getNPCUUID(npcName));
+    }
+
+
+    // Check if two chunks are adjacent or the same
+    private boolean isNearbyChunk(Chunk chunk1, Chunk chunk2) {
+        int dx = Math.abs(chunk1.getX() - chunk2.getX());
+        int dz = Math.abs(chunk1.getZ() - chunk2.getZ());
+        return dx <= 1 && dz <= 1;
+    }
+
+
     @EventHandler
     public void onHealthbarCreated(HealthBarCreateEvent event) {
         // if event entity is a player and vanished cancel
@@ -343,9 +614,12 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
             event.setCancelled(true);
         }
         // if event entity is a player and lib disguised then return disguise name
+        
         if (DisguiseAPI.isDisguised(event.getEntity().entity())) {
             // there is no setCustomName method in HealthBarCreateEvent what do I do?
-            event.setCancelled(true);
+            if (event.getEntity().entity() instanceof Player) {
+               event.setCancelled(true);
+            }
         }
 
     }
@@ -403,12 +677,17 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
                 return;
             }
 
+            if (disabledNPCs.contains(npc.getUniqueId())) {
+                player.sendMessage(ChatColor.YELLOW + npcName + " " + ChatColor.RED + "is busy.");
+                return;
+            }
+
             conversationManager.addNPCToConversation(player, npcName);
 
         } else {
 
-            if (conversationManager.isPlayerInConversation(player)) {
-                player.sendMessage(ChatColor.RED + "You are already in an active conversation.");
+            if (disabledNPCs.contains(npc.getUniqueId())) {
+                player.sendMessage(ChatColor.YELLOW + npcName + " " + ChatColor.RED + "is busy.");
                 return;
             }
 
@@ -436,7 +715,19 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
     }
 
 
-    public Location getNPCPos(String npcName) {
+    public CompletableFuture<Location> getNPCPos(String npcName) {
+        // Return a CompletableFuture for the NPC's position
+        return npcUtils.getNPCByNameAsync(npcName).thenApply(npc -> {
+            if (npc != null && npc.getEntity() != null) {
+                return npc.getEntity().getLocation(); // Return the NPC's location
+            } else {
+                return null; // NPC not found or doesn't have an entity
+            }
+        });
+    }
+
+    // getNPCByName async method
+    public NPC getNPCByName(String npcName) {
         NPC foundNPC = null;
         for (NPC npc : CitizensAPI.getNPCRegistry()) {
             if (npc.getName().equalsIgnoreCase(npcName)) {
@@ -444,11 +735,7 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
                 break;
             }
         }
-        if (foundNPC != null) {
-            return foundNPC.getEntity().getLocation();
-        } else {
-            return null;
-        }
+        return foundNPC;
     }
 
     public UUID getNPCUUID(String npcName) {
@@ -474,16 +761,91 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
         Player player = event.getPlayer();
         String message = event.getMessage();
 
+
+        // check if player is enabled DisabledPlayers
+        if (disabledPlayers.contains(player)) {
+            return;
+        }
+
+
+
+
+        // Check if player is in an active conversation
+        List<NPC> nearbyNPCs = new ArrayList<>();
+        for (NPC npc : CitizensAPI.getNPCRegistry()) {
+            if (npc.getEntity() == null) {
+                continue;
+            }
+            Location npcLocation = npc.getEntity().getLocation();
+            if (npcLocation.getWorld() == player.getWorld() && npcLocation.distance(player.getLocation()) <= 5) {
+                nearbyNPCs.add(npc);
+            }
+        }
+
+
         if (conversationManager.hasActiveConversation(player)) {
+
+            List<String> npcNames = conversationManager.getNPCNamesInConversation(player);
+
+// Remove NPCs from the conversation that are no longer nearby
+            for (String npcName : npcNames) {
+                boolean isNearby = nearbyNPCs.stream()
+                        .anyMatch(nearbyNPC -> nearbyNPC.getName().equals(npcName));
+                if (!isNearby) {
+                    // NPC is no longer nearby, remove it from the conversation
+                    conversationManager.removeNPCFromConversation(player, npcName, !nearbyNPCs.isEmpty());
+                }
+            }
+
+// Add nearby NPCs to the conversation if not already part of it
+            for (NPC nearbyNPC : nearbyNPCs) {
+
+                if (!conversationManager.isNPCInConversation(player, nearbyNPC.getName()) && (!disabledNPCs.contains(nearbyNPC.getUniqueId()))) {
+                    // NPC is nearby but not yet part of the conversation, add it
+                    conversationManager.addNPCToConversation(player, nearbyNPC.getName());
+                }
+            }
+
+
+
+
+
+
             conversationManager.addPlayerMessage(player, message, chatEnabled);
         } else {
-            player.sendMessage(ChatColor.RED + "You are not currently in an active conversation.");
+
+
+            if (nearbyNPCs.isEmpty()) {
+                 player.sendMessage(ChatColor.RED + "You are not currently in an active conversation.");
+                 return;
+            }
+
+            // Start a new conversation with the first NPC found
+            NPC npc = nearbyNPCs.getFirst();
+            String npcName = npc.getName();
+            List<String> npcNames = new ArrayList<>();
+            npcNames.add(npcName);
+            for (NPC nearbyNPC : nearbyNPCs) {
+                String nearbyNPCName = nearbyNPC.getName();
+                if (!nearbyNPCName.equals(npcName)) {
+                    npcNames.add(nearbyNPCName);
+                }
+            }
+            conversationManager.startGroupConversation(player, npcNames);
+            //conversationManager.addNPCToConversation(player, npcName);
+
+            // loop nearby NPCs and add them to the conversation
+
+
+            conversationManager.addPlayerMessage(player, message, chatEnabled);
+
+
 
 
         }
     }
 
-    public void broadcastNPCMessage(String aiResponse, String defaultNpcName, boolean shouldFollow, NPC finalNpc, UUID playerUUID, Player player) {
+    public void broadcastNPCMessage(String aiResponse, String defaultNpcName, boolean shouldFollow, NPC finalNpc, UUID playerUUID, Player player, String color) {
         MiniMessage mm = MiniMessage.miniMessage();
 
         // Split response into lines to handle multi-line input
@@ -520,7 +882,9 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
             // Format the message with the extracted NPC name
             Component parsedMessage = mm.deserialize(chatFormat
                     .replace("%npc_name%", currentNpcName)
-                    .replace("%message%", formattedMessage));
+                    .replace("%message%", formattedMessage)
+                            .replace("%color%", color));
+
             parsedMessages.add(parsedMessage);
         }
 
@@ -557,11 +921,13 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
     }
 
     public void setQuestTitle(String title) {
-        questTitle = title;
+        // Wait for setQuestObj to be called
+        tempQuestTitle = title;
     }
 
     public void setQuestObj(String obj) {
         questObj = obj;
+        questTitle = tempQuestTitle;
     }
 
     private void loadGeneralContexts() {
@@ -601,7 +967,7 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
         List<ConversationMessage> npcConversationHistory = getMessages(npcData);
         npcConversationHistory.add(new ConversationMessage("assistant", npcMessage));
         saveNPCConversationHistory(npcName, npcConversationHistory);
-        broadcastNPCMessage(npcMessage, npcName, false, null, null, null);
+        broadcastNPCMessage(npcMessage, npcName, false, null, null, null, "cyan");
 
     }
 

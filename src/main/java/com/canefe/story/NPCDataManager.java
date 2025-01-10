@@ -6,17 +6,21 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
 public class NPCDataManager {
 
     private static NPCDataManager instance;
 
     private final JavaPlugin plugin;
+    private final Map<String, NPCData> npcDataMap;
     private final File npcDirectory;
 
     private NPCDataManager(JavaPlugin plugin) {
         this.plugin = plugin;
         this.npcDirectory = new File(plugin.getDataFolder(), "npcs");
+        this.npcDataMap = new HashMap<>();
 
         if (!npcDirectory.exists()) {
             npcDirectory.mkdirs(); // Create the directory if it doesn't exist
@@ -41,6 +45,8 @@ public class NPCDataManager {
         if (!npcFile.exists()) {
             return new YamlConfiguration(); // Return an empty configuration if no file exists
         }
+        FileConfiguration config = YamlConfiguration.loadConfiguration(npcFile);
+
         return YamlConfiguration.loadConfiguration(npcFile);
     }
 

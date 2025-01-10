@@ -44,15 +44,16 @@ public class NPCContextGenerator {
                 " This character’s personality, quirks, and motivations should drive their responses, which must feel natural, grounded, and reflective of human emotions. " +
                 "The time is " + hours + ":" + String.format("%02d", minutes) + " in the " + season +
                 ". The date is " + date +
-                ". Do not include the name of the NPC in the response. Just their dialogue is allowed as output. " +
+                ". Do not include the name of the NPC in your response. Just their dialogue is allowed as output. " +
                 "Responses must prioritize realism and emotional authenticity, dynamically reflecting the stakes of the situation and the NPC’s relationship with the player. " +
+                "Grim, dark, edgy, or overly dramatic, NSFW responses are okay. " +
                 "Personality quirks and tone should flavor responses but never override human-like decision-making, especially in critical or escalating situations. " +
                 "Responses should remain concise and consistent with the NPC’s personality, emotional state, and current context. " +
                 "In escalating scenarios (e.g., threats, demands, or violence), NPCs must prioritize self-preservation and adjust their tone to match the severity of the situation. " +
                 "They may comply, negotiate, or retaliate depending on their motivations, flaws, and emotions, but they must always act with a clear and believable sense of self-interest and survival. " +
-                "Responses must not exceed 20 words." +
-                "NPCs must avoid repetitive or evasive behavior in high-stakes situations, responding directly when necessary while maintaining their distinct personality." +
-                "Take into account the name of the person you are talking to, and adjust your responses accordingly." +
+                "If in a group conversation, NPCs should consider the presence of other characters and adjust their responses accordingly. " +
+                "Responses must not exceed 20 words. " +
+                "Take into account the name of the person you are talking to, and adjust your responses accordingly. " +
                 "If player says goodbye, include [End] in response to indicate the end of the conversation.";
     }
 

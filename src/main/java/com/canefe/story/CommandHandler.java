@@ -40,10 +40,6 @@ public class CommandHandler implements CommandExecutor {
                 toggleGPT(player);
                 break;
 
-            case "maketalk":
-                npcTalk(player, args);
-                break;
-
             case "aireload":
                 reloadConfig(player);
                 break;
@@ -83,19 +79,6 @@ public class CommandHandler implements CommandExecutor {
         } else {
             player.sendMessage(ChatColor.GRAY + "Chat with NPCs disabled.");
         }
-    }
-
-    private void setNPCRole(Player player, String[] args) {
-        if (args.length < 2) {
-            player.sendMessage(ChatColor.RED + "Usage: /setnpcrole <npc name> <role description>");
-            return;
-        }
-
-        String npcName = args[0];
-        String roleDescription = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
-
-        plugin.updateNpcRole(npcName, roleDescription);
-        player.sendMessage(ChatColor.GRAY + "Role for NPC '" + npcName + "' set to: " + roleDescription);
     }
 
     private void npcTalk(Player player, String[] args) {
@@ -156,23 +139,42 @@ public class CommandHandler implements CommandExecutor {
         }
 
         String npcName = plugin.playerCurrentNPC.get(player.getUniqueId());
+        if (npcName == null) {
+            player.sendMessage(ChatColor.RED + "You are not currently talking to any NPC.");
+            return;
+        }
+
         String message = String.join(" ", args);
 
         // Fetch NPC conversation history
         plugin.conversationManager.addNPCMessage(npcName, message);
 
-        // simulate 3s delay
+        // Fetch NPC position asynchronously
+        plugin.getNPCPos(npcName).thenAccept(npcPos -> {
+            if ((npcPos != null)) {
+                plugin.conversationManager.showThinkingHolo(npcName);
+            }
 
-            Location npcPos = plugin.getNPCPos(npcName);
-            plugin.conversationManager.showThinkingHolo(npcPos, npcName);
+
+
+            // Schedule the message broadcast after a 3-second delay
             Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                // Remove hologram after the delay
                 int taskIdToRemove = plugin.conversationManager.getHologramTasks().get(npcName);
                 Bukkit.getScheduler().cancelTask(taskIdToRemove);
                 plugin.conversationManager.removeHologramTask(npcName);
                 DHAPI.removeHologram(plugin.getNPCUUID(npcName).toString());
-                plugin.broadcastNPCMessage(message, npcName, false, null, null, null);
-            }, 60L);
 
+                // Broadcast the NPC's message
+                plugin.broadcastNPCMessage(message, npcName, false, null, null, null, "#599B45");
+            }, 60L); // 3 seconds (60 ticks)
+        }).exceptionally(ex -> {
+            // Handle errors during NPC position retrieval
+            player.sendMessage(ChatColor.RED + "An error occurred while retrieving the NPC's position.");
+            ex.printStackTrace();
+            return null;
+        });
     }
+
 
 }
