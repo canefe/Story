@@ -4,7 +4,7 @@ main: com.canefe.story.Story
 api-version: '1.21'
 depend:
   - BetterHealthBar
-softdepend: ["PlaceholderAPI", "DecentHolograms"]
+softdepend: ["PlaceholderAPI", "DecentHolograms", "ItemsAdder"]
 commands:
   togglegpt:
     description: Toggles NPC chat with GPT.

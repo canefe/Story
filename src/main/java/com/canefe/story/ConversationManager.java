@@ -6,6 +6,8 @@ import eu.decentsoftware.holograms.api.holograms.Hologram;
 import me.casperge.realisticseasons.api.SeasonsAPI;
 import me.casperge.realisticseasons.calendar.Date;
 import me.casperge.realisticseasons.season.Season;
+import net.citizensnpcs.api.ai.Navigator;
+import net.citizensnpcs.api.ai.event.NavigationCompleteEvent;
 import net.citizensnpcs.api.npc.NPC;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Bukkit;
@@ -22,6 +24,8 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import com.canefe.story.Story.ConversationMessage;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
 
 public class ConversationManager {
 
@@ -32,9 +36,13 @@ public class ConversationManager {
     private boolean isRadiantEnabled = true;
 
     // Active group conversations (UUID -> GroupConversation)
-    private final List<GroupConversation> activeConversations = new ArrayList<>();
+    private final Map<Integer, GroupConversation> activeConversations = new HashMap<>();
 
     private final Map<String, Integer> hologramTasks = new HashMap<>();
+
+    public Map<GroupConversation, Integer> getScheduledTasks() {
+        return scheduledTasks;
+    }
 
     private final Map<GroupConversation, Integer> scheduledTasks = new HashMap<>();
 
@@ -63,13 +71,35 @@ public class ConversationManager {
         return isRadiantEnabled;
     }
 
+    public Map<Integer, GroupConversation> getActiveConversations() {
+        return activeConversations;
+    }
+
+    public GroupConversation getConversationById(Integer id) {
+        return activeConversations.get(id);
+    }
+
+    private void addConversation(GroupConversation conversation) {
+        int newId = activeConversations.size() + 1;
+        activeConversations.put(newId, conversation);
+    }
+
+    private void removeConversation(GroupConversation conversation) {
+        activeConversations.values().removeIf(convo -> convo.equals(conversation));
+    }
+
+    private GroupConversation getConversationByPlayer(Player player) {
+        return activeConversations.values().stream()
+                .filter(convo -> convo.getPlayers().contains(player.getUniqueId()))
+                .findFirst().orElse(null);
+    }
 
     // Start a new group conversation
     public GroupConversation startGroupConversation(Player player, List<NPC> npcs) {
         UUID playerUUID = player.getUniqueId();
 
         // End any existing conversation GroupConversation.players (list of UUIDs)
-        GroupConversation existingConversation = activeConversations.stream()
+        GroupConversation existingConversation = activeConversations.values().stream()
                 .filter(conversation -> conversation.getPlayers().contains(playerUUID))
                 .findFirst().orElse(null);
         if (existingConversation != null && existingConversation.isActive()) {
@@ -80,7 +110,7 @@ public class ConversationManager {
         List <UUID> players = new ArrayList<>();
         players.add(playerUUID);
         GroupConversation newConversation = new GroupConversation(players, npcs);
-        activeConversations.add(newConversation);
+        addConversation(newConversation);
 
         List <String> npcNames = new ArrayList<>();
         for (NPC npc : npcs) {
@@ -92,7 +122,11 @@ public class ConversationManager {
     }
 
     public void StopAllConversations() {
-        for (GroupConversation conversation : activeConversations) {
+        // Create a copy of the conversations to avoid concurrent modification
+        List<GroupConversation> conversationsToEnd = new ArrayList<>(activeConversations.values());
+
+        // End each conversation in the copy
+        for (GroupConversation conversation : conversationsToEnd) {
             endConversation(conversation);
         }
     }
@@ -108,7 +142,7 @@ public class ConversationManager {
         }
 
         GroupConversation newConversation = new GroupConversation(players, npcs);
-        activeConversations.add(newConversation);
+        addConversation(newConversation);
 
         return newConversation;
     }
@@ -125,7 +159,7 @@ public class ConversationManager {
         List <UUID> players = new ArrayList<>();
 
         GroupConversation newConversation = new GroupConversation(players, npcs);
-        activeConversations.add(newConversation);
+        addConversation(newConversation);
 
         generateRadiantResponses(newConversation);
 
@@ -137,7 +171,7 @@ public class ConversationManager {
 
         if (conversation != null && conversation.isActive()) {
             conversation.setActive(false);
-            activeConversations.remove(conversation);
+            removeConversation(conversation);
         }
 
     }
@@ -146,17 +180,8 @@ public class ConversationManager {
         List<NPC> npcs = conversation.getNPCs();
         List<ConversationMessage> conversationHistory = conversation.getConversationHistory();
 
-        // Color codes list for npcs ( each npc has a different color )
-        Map<String, String> colorCodes = new HashMap<>();
-        colorCodes.put("untaken1", "#599B45");
-        colorCodes.put("untaken2", "#51be6f");
-        colorCodes.put("untaken3", "#5E93D1");
-        colorCodes.put("untaken4", "#8A6DAD");
-        colorCodes.put("untaken5", "#FE92DE");
-        colorCodes.put("untaken6", "#BD2C19");
-
         if (npcNames.size() == 1) {
-             endRadiantConversation(conversation);
+            endConversation(conversation);
             return;
         }
 
@@ -227,27 +252,14 @@ public class ConversationManager {
                                     conversation.addMessage(new ConversationMessage("user", npcNames.getFirst() + " listens"));
                                 }
 
-                                if (!colorCodes.containsKey(npcName)) {
-                                    // get the next color code that is not 'untaken' as key
-                                    Map.Entry<String, String> colorEntry = colorCodes.entrySet().stream()
-                                            .filter(entry -> entry.getKey().contains("untaken"))
-                                            .findFirst()
-                                            .orElse(null);
-                                    if (colorEntry != null) {
-                                        // set the key to the npc name (change existing key)
-                                        colorCodes.put(npcName, colorEntry.getValue());
-                                        colorCodes.remove(colorEntry.getKey());
-                                    }
-                                }
-
                                 // Broadcast NPC response
                                 Bukkit.getScheduler().runTask(plugin, () -> {
-                                    plugin.broadcastNPCMessage(aiResponse, npcName, false, null, null, null, colorCodes.get(npcName));
+                                    plugin.broadcastNPCMessage(aiResponse, npcName, false, npc, null, null, NPCContext.avatar, plugin.randomColor(npcName));
                                 });
 
 
 
-                                endRadiantConversation(conversation);
+                                endConversation(conversation);
 
                             } catch (Exception e) {
                                 plugin.getLogger().warning("Error while generating response for NPC: " + npcName);
@@ -264,9 +276,7 @@ public class ConversationManager {
     public void addNPCToConversation(Player player, NPC npc) {
         UUID playerUUID = player.getUniqueId();
         String npcName = npc.getName();
-        GroupConversation conversation = activeConversations.stream()
-                .filter(convo -> convo.getPlayers().contains(playerUUID))
-                .findFirst().orElse(null);
+        GroupConversation conversation = getConversationByPlayer(player);
 
         if (conversation == null || !conversation.isActive()) {
             player.sendMessage(ChatColor.RED + "You are not currently in an active conversation.");
@@ -276,15 +286,13 @@ public class ConversationManager {
         if (conversation.addNPC(npc)) {
             player.sendMessage(ChatColor.GRAY + npcName + " has joined the conversation.");
             conversation.addMessage(new ConversationMessage("system", npcName + " has joined to the conversation."));
-        } else {
-            player.sendMessage(ChatColor.YELLOW + npcName + " is already part of the conversation.");
         }
     }
 
     public void removeNPCFromConversation(Player player, NPC npc, boolean anyNearbyNPC) {
         UUID playerUUID = player.getUniqueId();
         String npcName = npc.getName();
-        GroupConversation conversation = activeConversations.stream()
+        GroupConversation conversation = activeConversations.values().stream()
                 .filter(convo -> convo.getPlayers().contains(playerUUID))
                 .findFirst().orElse(null);
 
@@ -316,43 +324,274 @@ public class ConversationManager {
         }
     }
 
-    // End a conversation
-    public void endConversation(Player player) {
-        UUID playerUUID = player.getUniqueId();
-        GroupConversation conversation = activeConversations.stream()
-                .filter(convo -> convo.getPlayers().contains(playerUUID))
-                .findFirst().orElse(null);
-
-        if (conversation != null && conversation.isActive()) {
-            conversation.setActive(false);
-
-            // Summarize the conversation
-            summarizeConversation(conversation.getConversationHistory(), conversation.getNpcNames(), player.getName());
-
-            applyEffects(conversation.getConversationHistory(), conversation.getNpcNames(), player.getName());
-
-            activeConversations.remove(conversation);
-            player.sendMessage(ChatColor.GRAY + "The conversation has ended.");
-        } else {
-            activeConversations.removeIf(convo -> !convo.isActive());
-        }
-    }
-
     public void endConversation(GroupConversation conversation) {
         if (conversation != null && conversation.isActive()) {
             conversation.setActive(false);
+
+            // Get location name
+            String locationName = "Village"; // Default location
+            List<NPC> npcs = conversation.getNPCs();
+            if (!npcs.isEmpty()) {
+                NPC firstNPC = npcs.get(0);
+                if (firstNPC != null) {
+                    NPCUtils.NPCContext context = NPCUtils.getInstance(plugin).getOrCreateContextForNPC(firstNPC.getName());
+                    if (context != null && context.location != null) {
+                        locationName = context.location.getName();
+                    }
+                }
+            }
+
+            // Existing functionality
             summarizeConversation(conversation.getConversationHistory(), conversation.getNpcNames(), null);
             applyEffects(conversation.getConversationHistory(), conversation.getNpcNames(), null);
-            activeConversations.remove(conversation);
+
+            // New: Process the conversation for rumors and personal knowledge
+            RumorManager.getInstance(plugin).processConversationSignificance(
+                    conversation.getConversationHistory(),
+                    conversation.getNpcNames(),
+                    locationName
+            );
+
+            removeConversation(conversation);
+        }
+    }
+
+    /**
+     * Adds an NPC to an existing conversation
+     * @param npc The NPC to add
+     * @param conversation The conversation to add the NPC to
+     * @param greetingMessage Optional greeting message (can be null)
+     * @return True if successful, false otherwise
+     */
+    /**
+     * Adds an NPC to an existing conversation by making the NPC walk to the conversation location first
+     *
+     * @param npc The NPC to add to the conversation
+     * @param conversation The conversation to add the NPC to
+     * @param greetingMessage Optional greeting message for the NPC to say when joining (can be null)
+     * @return true if the NPC was added successfully, false otherwise
+     */
+    public boolean addNPCToConversationWalk(NPC npc, GroupConversation conversation, String greetingMessage) {
+        if (npc == null || !npc.isSpawned() || conversation == null || !conversation.isActive()) {
+            return false;
+        }
+
+        // Check if NPC is already in this conversation
+        if (conversation.getNpcNames().contains(npc.getName())) {
+            return false;
+        }
+
+        // Get the NPCContext for avatar and color information
+        NPCUtils.NPCContext npcContext = plugin.npcUtils.getOrCreateContextForNPC(npc.getName());
+
+        // Find a target location within the conversation
+        // First try to find a player in the conversation to walk to
+        Location targetLocation = null;
+        Player targetPlayer = null;
+
+        for (UUID playerUUID : conversation.getPlayers()) {
+            Player player = Bukkit.getPlayer(playerUUID);
+            if (player != null && player.isOnline()) {
+                targetLocation = player.getLocation();
+                targetPlayer = player;
+                break;
+            }
+        }
+
+        // If no player is found, try to find another NPC in the conversation
+        if (targetLocation == null) {
+            for (String npcName : conversation.getNpcNames()) {
+                NPC targetNPC = plugin.getNPCByName(npcName);
+                if (targetNPC != null && targetNPC.isSpawned() && !targetNPC.equals(npc)) {
+                    targetLocation = targetNPC.getEntity().getLocation();
+                    break;
+                }
+            }
+        }
+
+        // If we still don't have a target location, return false
+        if (targetLocation == null) {
+            return false;
+        }
+
+        // Make a final reference for use in lambdas
+        final Location finalTargetLocation = targetLocation;
+        final Player finalTargetPlayer = targetPlayer;
+
+        // Make NPC walk to the conversation location
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            Navigator navigator = npc.getNavigator();
+            navigator.setTarget(finalTargetLocation);
+            navigator.getDefaultParameters().distanceMargin(2.0);
+
+            // Listen for navigation completion
+            Bukkit.getPluginManager().registerEvents(new Listener() {
+                @EventHandler
+                public void onNavigationComplete(NavigationCompleteEvent event) {
+                    if (event.getNPC().equals(npc)) {
+                        // Unregister listener after completion
+                        NavigationCompleteEvent.getHandlerList().unregister(this);
+
+                        // Add NPC to conversation
+                        conversation.addNPC(npc);
+
+                        // System message about NPC joining
+                        String joinMessage = npc.getName() + " has joined the conversation.";
+                        conversation.addMessage(new Story.ConversationMessage("system", joinMessage));
+
+                        String finalGreetingMessage = greetingMessage;
+
+                        // if greeting null, create one
+                        if (finalGreetingMessage == null || finalGreetingMessage.isEmpty()) {
+                            finalGreetingMessage = generateNPCGreeting(npc, conversation);
+                        }
+
+                        // Handle greeting message if provided
+                        if (finalGreetingMessage != null && !finalGreetingMessage.isEmpty()) {
+                            // Add NPC's greeting to the conversation
+                            conversation.addMessage(new Story.ConversationMessage(
+                                    "assistant", npc.getName() + ": " + finalGreetingMessage));
+
+                            // Broadcast the greeting message
+                            plugin.broadcastNPCMessage(
+                                    finalGreetingMessage,
+                                    npc.getName(),
+                                    false,
+                                    npc,
+                                    finalTargetPlayer != null ? finalTargetPlayer.getUniqueId() : null,
+                                    finalTargetPlayer,
+                                    npcContext.avatar,
+                                    plugin.randomColor(npc.getName())
+                            );
+                        }
+
+                        // Generate a response from the other NPCs in the conversation
+                        generateGroupNPCResponses(conversation, null);
+                    }
+                }
+            }, plugin);
+        });
+
+        return true;
+    }
+
+    /**
+     * Adds an NPC's greeting to a conversation and triggers responses
+     */
+    private void addNPCGreeting(NPC npc, GroupConversation conversation, String greeting) {
+        String npcName = npc.getName();
+
+        // Add the greeting to conversation history
+        conversation.addMessage(new Story.ConversationMessage(npcName, greeting));
+        NPCUtils.NPCContext npcContext = plugin.npcUtils.getOrCreateContextForNPC(npcName);
+
+        // Broadcast the greeting message
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            String colorCode = plugin.randomColor(npcName);
+            plugin.broadcastNPCMessage(greeting, npcName, false, npc, null, null, npcContext.avatar, colorCode);
+
+            // Generate responses from other NPCs in the conversation
+            generateGroupNPCResponses(conversation, null);
+        });
+    }
+
+    /**
+     * Generate a greeting for an NPC joining a conversation
+     */
+    private String generateNPCGreeting(NPC npc, GroupConversation conversation) {
+        String npcName = npc.getName();
+        NPCUtils.NPCContext npcContext = plugin.npcUtils.getOrCreateContextForNPC(npcName);
+
+        // Build the list of existing participants
+        StringBuilder participantsStr = new StringBuilder();
+        for (UUID player : conversation.getPlayers()) {
+            Player playerObj = Bukkit.getPlayer(player);
+            String playerName = playerObj != null ? EssentialsUtils.getNickname(playerObj.getName()) : "Unknown Player";
+            participantsStr.append(playerName).append(", ");
+        }
+        for (NPC existingNPC : conversation.getNPCs()) {
+            if (!existingNPC.equals(npc)) {
+                participantsStr.append(existingNPC.getName()).append(", ");
+            }
+        }
+        if (participantsStr.length() > 2) {
+            participantsStr.setLength(participantsStr.length() - 2); // Remove trailing comma and space
+        }
+
+        // Create prompt for generating greeting
+        List<Story.ConversationMessage> promptMessages = new ArrayList<>();
+
+        // Add system context
+        promptMessages.add(new Story.ConversationMessage("system",
+                "You are " + npcName + ". " + npcContext.context +
+                        "\n\nYou are joining an ongoing conversation with: " + participantsStr.toString() +
+                        "\n\nGenerate a greeting or introduction that acknowledges the ongoing conversation. " +
+                        "Keep it brief and in-character. Don't use quotation marks or indicate who is speaking."));
+
+        // Add recent conversation history for context
+        List<Story.ConversationMessage> recentHistory = conversation.getConversationHistory()
+                .subList(Math.max(conversation.getConversationHistory().size() - 10, 0), conversation.getConversationHistory().size());
+        for (Story.ConversationMessage msg : recentHistory) {
+            promptMessages.add(new Story.ConversationMessage("user", msg.getRole() + ": " + msg.getContent()));
+        }
+
+        // Add final instruction
+        promptMessages.add(new Story.ConversationMessage("user",
+                "Write a single greeting or introduction line as " + npcName + " joining this conversation."));
+
+        // Generate the greeting
+        try {
+            String greeting = plugin.getAIResponse(promptMessages);
+            return greeting != null ? greeting.trim() : null;
+        } catch (Exception e) {
+            plugin.getLogger().severe("Error generating NPC greeting: " + e.getMessage());
+            return null;
+        }
+    }
+
+    // Do the same change for the Player version of endConversation
+    public void endConversation(Player player) {
+        UUID playerUUID = player.getUniqueId();
+        GroupConversation conversation = getConversationByPlayer(player);
+
+        if (conversation != null && conversation.isActive()) {
+            conversation.setActive(false);
+
+            // Get location name
+            String locationName = "Village"; // Default location
+            List<NPC> npcs = conversation.getNPCs();
+            if (!npcs.isEmpty()) {
+                NPC firstNPC = npcs.get(0);
+                if (firstNPC != null) {
+                    NPCUtils.NPCContext context = NPCUtils.getInstance(plugin).getOrCreateContextForNPC(firstNPC.getName());
+                    if (context != null && context.location != null) {
+                        locationName = context.location.getName();
+                    }
+                }
+            }
+
+            // Summarize the conversation (existing functionality)
+            summarizeConversation(conversation.getConversationHistory(), conversation.getNpcNames(), player.getName());
+            applyEffects(conversation.getConversationHistory(), conversation.getNpcNames(), player.getName());
+
+            // New: Process the conversation for rumors and personal knowledge
+            RumorManager.getInstance(plugin).processConversationSignificance(
+                    conversation.getConversationHistory(),
+                    conversation.getNpcNames(),
+                    locationName
+            );
+
+            removeConversation(conversation);
+            player.sendMessage(ChatColor.GRAY + "The conversation has ended.");
+        } else {
+            activeConversations.values().removeIf(convo -> !convo.isActive());
         }
     }
 
     // Add a player's message to the group conversation
     public void addPlayerMessage(Player player, String message, boolean chatEnabled) {
         UUID playerUUID = player.getUniqueId();
-        GroupConversation conversation = activeConversations.stream()
-                .filter(convo -> convo.getPlayers().contains(playerUUID))
-                .findFirst().orElse(null);
+        GroupConversation conversation = getConversationByPlayer(player);
 
         if (conversation == null || !conversation.isActive()) {
             player.sendMessage(ChatColor.RED + "You are not currently in an active conversation.");
@@ -371,8 +610,23 @@ public class ConversationManager {
         if (!chatEnabled) {
             return;
         }
-        // Generate responses from all NPCs sequentially
-        generateGroupNPCResponses(conversation, player);
+
+        // Cancel any existing scheduled tasks for this conversation
+        Integer existingTaskId = scheduledTasks.get(conversation);
+        if (existingTaskId != null) {
+            Bukkit.getScheduler().cancelTask(existingTaskId);
+        }
+
+        // Schedule a new task to generate responses after 5 seconds
+        int taskId = Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            // Generate responses from all NPCs sequentially
+            generateGroupNPCResponses(conversation, player);
+            // Remove from scheduled tasks map since it's now executing
+            scheduledTasks.remove(conversation);
+        }, plugin.getResponseDelay() * 20L).getTaskId(); // 5 seconds * 20 ticks/second
+
+        // Store the task ID
+        scheduledTasks.put(conversation, taskId);
     }
 
     public Map<String, Integer> getHologramTasks() {
@@ -389,14 +643,12 @@ public class ConversationManager {
 
     public boolean isNPCInConversation(Player player, String npcName) {
         UUID playerUUID = player.getUniqueId();
-        GroupConversation conversation = activeConversations.stream()
-                .filter(convo -> convo.getPlayers().contains(playerUUID))
-                .findFirst().orElse(null);
+        GroupConversation conversation = getConversationByPlayer(player);
         return conversation != null && conversation.isActive() && conversation.getNpcNames().contains(npcName);
     }
 
     public boolean isNPCInConversation(String npcName) {
-        for (GroupConversation conversation : activeConversations) {
+        for (GroupConversation conversation : activeConversations.values()) {
             if (conversation.getNpcNames().contains(npcName)) {
                 return true;
             }
@@ -406,7 +658,7 @@ public class ConversationManager {
 
     public boolean addPlayerToConversation(Player player, String npcName) {
         // Join the player to another player's conversation
-        for (GroupConversation conversation : activeConversations) {
+        for (GroupConversation conversation : activeConversations.values()) {
             if (conversation.getNpcNames().contains(npcName)) {
                 if (conversation.addPlayerToConversation(player)) {
                     player.sendMessage(ChatColor.GRAY + "You joined the conversation with " + npcName);
@@ -422,14 +674,12 @@ public class ConversationManager {
 
     public boolean isPlayerInConversation(Player player) {
         UUID playerUUID = player.getUniqueId();
-        GroupConversation conversation = activeConversations.stream()
-                .filter(convo -> convo.getPlayers().contains(playerUUID))
-                .findFirst().orElse(null);
+        GroupConversation conversation = getConversationByPlayer(player);
         return conversation != null && conversation.isActive();
     }
 
     public void addNPCMessage(String npcName, String message) {
-        for (GroupConversation conversation : activeConversations) {
+        for (GroupConversation conversation : activeConversations.values()) {
             if (conversation.getNpcNames().contains(npcName)) {
                 conversation.addMessage(new ConversationMessage("assistant", npcName + ": " + message));
                 conversation.addMessage(new ConversationMessage("user", "*Rest are listening...*"));
@@ -441,18 +691,14 @@ public class ConversationManager {
     // return all npc names in conversation
     public List<NPC> getNPCsInConversation(Player player) {
         UUID playerUUID = player.getUniqueId();
-        GroupConversation conversation = activeConversations.stream()
-                .filter(convo -> convo.getPlayers().contains(playerUUID))
-                .findFirst().orElse(null);
+        GroupConversation conversation = getConversationByPlayer(player);
         return conversation != null ? conversation.getNPCs() : new ArrayList<>();
     }
 
     public List<String> getAllParticipantsInConversation(Player player) {
         // get both all npc names and player names in conversation
         UUID playerUUID = player.getUniqueId();
-        GroupConversation conversation = activeConversations.stream()
-                .filter(convo -> convo.getPlayers().contains(playerUUID))
-                .findFirst().orElse(null);
+        GroupConversation conversation = getConversationByPlayer(player);
         List<String> npcNames = conversation != null ? conversation.getNpcNames() : new ArrayList<>();
         List<String> playerNames = conversation != null ? conversation.getPlayers().stream()
                 .map(uuid -> {
@@ -465,62 +711,36 @@ public class ConversationManager {
     }
 
     public GroupConversation getActiveNPCConversation(String npcName) {
-        for (GroupConversation conversation : activeConversations) {
-            if (conversation.getNpcNames().contains(npcName)) {
-                return conversation;
-            }
-        }
-        return null;
+        return activeConversations.values().stream()
+                .filter(conversation -> conversation.getNpcNames().contains(npcName))
+                .findFirst().orElse(null);
     }
 
     // Generate NPC responses sequentially for the group conversation
-    public void generateGroupNPCResponses(GroupConversation conversation, Player player) {
+    public CompletableFuture<Void> generateGroupNPCResponses(GroupConversation conversation, Player player) {
         List<String> npcNames = conversation.getNpcNames();
         List<NPC> npcs = conversation.getNPCs();
-        List<ConversationMessage> conversationHistory = conversation.getConversationHistory();
 
-        // Color codes list for npcs ( each npc has a different color )
-        Map<String, String> colorCodes = new HashMap<>();
-        colorCodes.put("untaken1", "#599B45");
-        colorCodes.put("untaken2", "#51be6f");
-        colorCodes.put("untaken3", "#5E93D1");
-        colorCodes.put("untaken4", "#8A6DAD");
-        colorCodes.put("untaken5", "#FE92DE");
-        colorCodes.put("untaken6", "#BD2C19");
+        List<CompletableFuture<Void>> responseFutures = new ArrayList<>();
 
-        // loop through the npc names, remove disabled npcs
-        Iterator<String> iterator = npcNames.iterator();
-        while (iterator.hasNext()) {
-            String npcName = iterator.next();
-            if (plugin.isNPCDisabled(npcName)) {
-                iterator.remove();
-                conversation.removeNPC(
-                        Objects.requireNonNull(npcs.stream().filter(npc -> npc.getName().equals(npcName)).findFirst().orElse(null)));
-
-            }
-        }
-
-        // Process NPC responses one by one with a delay
         for (int i = 0; i < npcNames.size(); i++) {
             String npcName = npcNames.get(i);
-            int delay = i * 3; // 6 seconds delay for each NPC (3 seconds for "is thinking" + 3 seconds for response)
+            int delay = i * 3;
 
-            // Schedule the "is thinking" message after the delay
-            int finalI = i;
+            if (plugin.isNPCDisabled(npcName)) continue;
+
+            CompletableFuture<Void> future = new CompletableFuture<>();
+
             Bukkit.getScheduler().runTaskLater(plugin, () -> {
                 npcs.stream().filter(npc -> npc.getName().equals(npcName)).findFirst().ifPresent(npc -> {
-
-                    // Show "is thinking" hologram
                     showThinkingHolo(npc);
 
-                    // Schedule the NPC response after another 3-second delay
                     Bukkit.getScheduler().runTaskLater(plugin, () -> {
                         CompletableFuture.runAsync(() -> {
                             try {
-                                // Fetch NPC data dynamically
+                                // --- AI logic and setup code ---
                                 NPCUtils.NPCContext NPCContext = NPCUtils.getInstance(plugin).getOrCreateContextForNPC(npcName);
 
-                                // Prepare temp history
                                 List<ConversationMessage> tempHistory = new ArrayList<>(conversation.getConversationHistory());
                                 List<String> playerNames = conversation.getPlayers().stream()
                                         .map(uuid -> {
@@ -529,24 +749,33 @@ public class ConversationManager {
                                         })
                                         .collect(Collectors.toList());
 
-                                tempHistory.addFirst(new ConversationMessage("system",
-                                        "You are " + npcName + " in a group conversation with " + String.join(", ", npcNames) + " , " + String.join(", ", playerNames) + "."));
-                                plugin.getGeneralContexts().forEach(context -> tempHistory.addFirst(new ConversationMessage("system", context)));
+                                plugin.getGeneralContexts().forEach(context ->
+                                        tempHistory.addFirst(new ConversationMessage("system", context))
+                                );
+
                                 if (NPCContext.location != null)
-                                    NPCContext.location.getContext().forEach(context -> tempHistory.addFirst(new ConversationMessage("system", context)));
+                                    NPCContext.location.getContext().forEach(context ->
+                                            tempHistory.addFirst(new ConversationMessage("system", context))
+                                    );
 
                                 List<ConversationMessage> lastTwentyMessages = NPCContext.conversationHistory.subList(
-                                        Math.max(NPCContext.conversationHistory.size() - 20, 0), NPCContext.conversationHistory.size());
-                                tempHistory.add(0, new ConversationMessage("system", "Relations: " + NPCContext.relations.toString()));
-                                tempHistory.add(0, new ConversationMessage("system", "Your responses should reflect your relations with the other characters if applicable. Never print out the relation as dialogue."));
+                                        Math.max(NPCContext.conversationHistory.size() - 10, 0),
+                                        NPCContext.conversationHistory.size());
                                 lastTwentyMessages.add(0, NPCContext.conversationHistory.get(0));
-
                                 tempHistory.addAll(0, lastTwentyMessages);
 
+                                tempHistory.add(new ConversationMessage("system",
+                                        "You are " + npcName + ". You are currently in a conversation with: " +
+                                                String.join(", ", npcNames) + " and " + String.join(", ", playerNames) + "." +
+                                                " This is YOUR turn to speak. Do NOT generate dialogue for others. " +
+                                                "Address the relevant character(s) naturally based on previous dialogue."));
 
-                                // Request AI response
+                                tempHistory.add(new ConversationMessage("system", "Relations: " + NPCContext.relations.toString()));
+                                tempHistory.add(new ConversationMessage("system", "Your responses should reflect your relations with the other characters if applicable. Never print out the relation as dialogue."));
+
                                 String aiResponse = plugin.getAIResponse(tempHistory);
 
+                                // --- Post-AI logic ---
                                 DHAPI.removeHologram(npc.getUniqueId().toString());
 
                                 Integer taskId = hologramTasks.get(npcName);
@@ -557,141 +786,161 @@ public class ConversationManager {
 
                                 if (aiResponse == null || aiResponse.isEmpty()) {
                                     plugin.getLogger().warning("Failed to generate NPC response for " + npcName);
+                                    future.complete(null);
                                     return;
                                 }
 
-
-                                // Add NPC response to conversation
-                                conversation.addMessage(new ConversationMessage("assistant", npcName + ": " + aiResponse));
-
-                                //
-                                if (player != null) {
-                                    conversation.addMessage(new ConversationMessage("user", "..."));
-                                } else {
-                                    conversation.addMessage(new ConversationMessage("user", "..."));
-                                }
-
-
-                                if (aiResponse.contains("[End]")) {
-                                    if (player != null) {
-                                        endConversation(player);
-                                    }
-                                }
-                                // sometimes other npcs speak in other npc's turn, so check the message using regex and get the npc name to check if its the same npc, then use the same color if so.
-// Ensure every NPC has a color code assigned
                                 Pattern npcNamePattern = Pattern.compile("^([\\w\\s']+):(?:\\s*\\1:)?");
                                 Matcher matcher = npcNamePattern.matcher(aiResponse);
-                                String finalNpcName;
-                                if (matcher.find()) {
-                                    String responseNpcName = matcher.group(1);
-                                    if (!colorCodes.containsKey(responseNpcName)) {
-                                        // get the next available color code
-                                        Optional<Map.Entry<String, String>> colorEntry = colorCodes.entrySet().stream()
-                                                .filter(entry -> entry.getKey().startsWith("untaken"))
-                                                .findFirst();
-                                        colorEntry.ifPresent(entry -> {
-                                            colorCodes.put(responseNpcName, entry.getValue());
-                                            colorCodes.remove(entry.getKey());
-                                        });
-                                    }
-                                    finalNpcName = responseNpcName;
-                                } else {
-                                    if (!colorCodes.containsKey(npcName)) {
-                                        // get the next available color code
-                                        Optional<Map.Entry<String, String>> colorEntry = colorCodes.entrySet().stream()
-                                                .filter(entry -> entry.getKey().startsWith("untaken"))
-                                                .findFirst();
-                                        colorEntry.ifPresent(entry -> {
-                                            colorCodes.put(npcName, entry.getValue());
-                                            colorCodes.remove(entry.getKey());
-                                        });
-                                    }
-                                    finalNpcName = npcName;
+                                String finalNpcName = matcher.find() ? matcher.group(1) : npcName;
+
+                                conversation.addMessage(new ConversationMessage("assistant", npcName + ": " + aiResponse));
+                                conversation.addMessage(new ConversationMessage("user", "..."));
+
+                                if (aiResponse.contains("[End]") && player != null) {
+                                    endConversation(player);
                                 }
 
-// Ensure finalNpcName has a color code
-                                String colorCode = colorCodes.get(finalNpcName);
-                                if (colorCode != null) {
-                                    // Broadcast NPC response
-                                    Bukkit.getScheduler().runTask(plugin, () -> {
-                                        plugin.broadcastNPCMessage(aiResponse, npcName, false, null, null, null, colorCode);
-                                    });
-                                } else {
-                                    plugin.getLogger().warning("Color code for NPC " + finalNpcName + " is null.");
-                                }
+                                String colorCode = plugin.randomColor(finalNpcName);
+                                Bukkit.getScheduler().runTask(plugin, () ->
+                                        plugin.broadcastNPCMessage(aiResponse, npcName, false, npc, null, null, NPCContext.avatar, colorCode)
+                                );
+
+                                future.complete(null);
 
                             } catch (Exception e) {
-                                plugin.getLogger().warning("Error while generating response for NPC: " + npcName);
+                                plugin.getLogger().warning("Error generating NPC response for " + npcName);
                                 e.printStackTrace();
+                                future.completeExceptionally(e);
                             }
                         });
-                    }, 3 * 20L); // 3 seconds delay for the response
+                    }, 3 * 20L);
                 });
-            }, delay * 20L); // Convert seconds to ticks (1 second = 20 ticks)
+            }, delay * 20L);
+
+            responseFutures.add(future);
         }
+
+        return CompletableFuture.allOf(responseFutures.toArray(new CompletableFuture[0]));
     }
+
 
 
     public void showThinkingHolo(NPC npc) {
         String npcName = npc.getName();
-        Location npcPos = npc.getEntity().getLocation();
+
+        if (!npc.isSpawned() || npc.getEntity() == null) return;
+
+        Location npcPos = npc.getEntity().getLocation().clone().add(0, 2.10, 0);
         String npcUUID = npc.getUniqueId().toString();
 
-        npcPos.add(0, 2.10, 0);
-
-        // Check if a hologram already exists and remove it
         Hologram holo = DHAPI.getHologram(npcUUID);
-        if (holo != null) {
-            DHAPI.removeHologram(npcUUID);
-        }
+        if (holo != null) DHAPI.removeHologram(npcUUID);
 
-        // Create a new hologram
         holo = DHAPI.createHologram(npcUUID, npcPos);
         DHAPI.addHologramLine(holo, 0, "&7&othinking...");
         DHAPI.updateHologram(npcUUID);
 
         Hologram finalHolo = holo;
 
-        // Schedule a task to keep the hologram updated with the NPC's position
         int taskId = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
-            Location updatedPos = npc.getEntity().getLocation();
-            updatedPos.add(0, 2.10, 0);
+            if (!npc.isSpawned() || npc.getEntity() == null) {
+                // Remove the hologram if the NPC is gone
+                DHAPI.removeHologram(npc.getUniqueId().toString());
+
+                // Check if the task ID exists in the map before canceling
+                Integer taskToCancel = hologramTasks.get(npcName);
+                if (taskToCancel != null) {
+                    Bukkit.getScheduler().cancelTask(taskToCancel);
+                    hologramTasks.remove(npcName);
+                }
+                return;
+            }
+
+            Location updatedPos = npc.getEntity().getLocation().clone().add(0, 2.10, 0);
             DHAPI.moveHologram(finalHolo, updatedPos);
         }, 0L, 5L).getTaskId();
 
-        // Store the task ID for cancellation later
         hologramTasks.put(npcName, taskId);
+    }
+
+
+    public void addSystemMessage(GroupConversation conversation, String message) {
+        conversation.addMessage(new ConversationMessage("system", message));
     }
 
 
 
     // Summarize the conversation history
+// Summarize the conversation history
     private void summarizeConversation(List<ConversationMessage> history, List<String> npcNames, String playerName) {
-        if (history.isEmpty()) return;
+        if (history.isEmpty() || history.size() < 3) return; // Skip trivial conversations
 
-        // Build the summary prompt
-        StringBuilder prompt = new StringBuilder("Summarize this conversation between ");
-        prompt.append(playerName).append(" and ").append(String.join(", ", npcNames)).append(".\n");
-        for (ConversationMessage msg : history) {
-            prompt.append(msg.getRole()).append(": ").append(msg.getContent()).append("\n");
-        }
+        // List of prompts to be sent to the AI
+        List<ConversationMessage> prompts = new ArrayList<>();
+
+        // Add the conversation history
+        prompts.addAll(history);
+
+        // Create a more direct prompt for summarization with clear output formatting requirements
+        prompts.add(new ConversationMessage("system", """
+        Summarize this conversation concisely and chronologically, focusing on key information and events.
+        Analyze what happened and rate the conversation's significance on a scale of 0-10:
+        - 0-2: Not significant (greetings, small talk with no useful information)
+        - 3-5: Somewhat significant (basic information shared)
+        - 6-8: Significant (meaningful interaction, relationship development)
+        - 9-10: Highly significant (major revelations, critical information)
+        
+        Format your response exactly like this:
+        [SUMMARY]
+        Your actual summary text here...
+        [SIGNIFICANCE: X]
+        
+        Where X is the numeric significance rating (0-10).
+        Both sections are required.
+        """));
 
         // Generate summary using AI
         CompletableFuture.runAsync(() -> {
             try {
-                String summary = plugin.getAIResponse(Collections.singletonList(
-                        new ConversationMessage("system", prompt.toString())
-                ));
-                if (summary != null && !summary.isEmpty()) {
-                    for (String npcName : npcNames) {
-                        plugin.addSystemMessage(npcName, summary);
+                String summaryResult = plugin.getAIResponse(prompts);
+                if (summaryResult != null && !summaryResult.isEmpty()) {
+                    // Extract summary and significance
+                    String summary = "";
+                    int significance = 5; // Default to middle rating
+
+                    // Extract the summary section
+                    Pattern summaryPattern = Pattern.compile("\\[SUMMARY\\](.*?)(?:\\[SIGNIFICANCE|$)", Pattern.DOTALL);
+                    Matcher summaryMatcher = summaryPattern.matcher(summaryResult);
+                    if (summaryMatcher.find()) {
+                        summary = summaryMatcher.group(1).trim();
+                    } else {
+                        // If formatting failed, use the whole response
+                        summary = summaryResult;
                     }
-                } else {
-                    plugin.getLogger().warning("Failed to summarize the conversation.");
+
+                    // Extract significance rating
+                    Pattern significancePattern = Pattern.compile("\\[SIGNIFICANCE:\\s*(\\d+)\\]");
+                    Matcher significanceMatcher = significancePattern.matcher(summaryResult);
+                    if (significanceMatcher.find()) {
+                        significance = Integer.parseInt(significanceMatcher.group(1));
+                    }
+
+                    plugin.getLogger().info("Conversation summary significance: " + significance);
+
+                    // Only add significant conversations to NPC memory
+                    if (significance > 2) {
+                        for (String npcName : npcNames) {
+                            plugin.addSystemMessage(npcName, summary);
+                        }
+                        plugin.getLogger().info("Added significant conversation to memory");
+                    } else {
+                        plugin.getLogger().info("Skipped adding insignificant conversation to memory");
+                    }
                 }
             } catch (Exception e) {
                 e.printStackTrace();
-                plugin.getLogger().severe("Error occurred while summarizing the conversation.");
+                plugin.getLogger().severe("Error occurred while summarizing conversation: " + e.getMessage());
             }
         });
     }
@@ -752,6 +1001,8 @@ public class ConversationManager {
             prompt.append(msg.getRole()).append(": ").append(msg.getContent()).append("\n");
         }
 
+
+
         // Generate summary using AI
         CompletableFuture.runAsync(() -> {
             try {
@@ -796,10 +1047,10 @@ public class ConversationManager {
                         plugin.saveNPCRelationValue(npcName, target, value);
                         break;
                     case "title":
-                        plugin.broadcastNPCMessage("Title of " + target + " has changed to " + value, npcName, false, null, null, null, "#599B45");
+                        //plugin.broadcastNPCMessage("Title of " + target + " has changed to " + value, npcName, false, null, null, null, "#599B45");
                         break;
                     case "item":
-                        plugin.broadcastNPCMessage("Item " + value + " has been given to " + target, npcName, false, null, null, null, "#599B45");
+                        //plugin.broadcastNPCMessage("Item " + value + " has been given to " + target, npcName, false, null, null, null, "#599B45");
                         break;
                     default:
                         System.out.println("Unknown effect: " + effect);
@@ -816,15 +1067,11 @@ public class ConversationManager {
 
     // Check if a player has an active conversation
     public boolean hasActiveConversation(Player player) {
-        GroupConversation conversation = activeConversations.stream()
-                .filter(convo -> convo.getPlayers().contains(player.getUniqueId()))
-                .findFirst().orElse(null);
+        GroupConversation conversation = getConversationByPlayer(player);
         return conversation != null && conversation.isActive();
     }
 
     public GroupConversation getActiveConversation(Player player) {
-        return activeConversations.stream()
-                .filter(convo -> convo.getPlayers().contains(player.getUniqueId()))
-                .findFirst().orElse(null);
+        return getConversationByPlayer(player);
     }
 }

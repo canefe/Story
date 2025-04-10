@@ -71,14 +71,16 @@ public class NPCUtils {
         public String context;
         public Map<String, Integer> relations;
         public StoryLocation location;
+        public String avatar;
         public List<Story.ConversationMessage> conversationHistory;
 
-        public NPCContext(String npcName, String npcRole, String existingContext, Map<String, Integer> relations, StoryLocation storyLocation, List<Story.ConversationMessage> npcConversationHistory) {
+        public NPCContext(String npcName, String npcRole, String existingContext, Map<String, Integer> relations, StoryLocation storyLocation, String avatar, List<Story.ConversationMessage> npcConversationHistory) {
             this.npcName = npcName;
             this.npcRole = npcRole;
             this.context = existingContext;
             this.relations = relations;
             this.location = storyLocation;
+            this.avatar = avatar;
             this.conversationHistory = npcConversationHistory;
         }
     }
@@ -91,6 +93,7 @@ public class NPCUtils {
             String npcRole = npcData.getString("role", "Default role");
             String existingContext = npcData.getString("context", null);
             String location = npcData.getString("location", "Village");
+            String avatar = npcData.getString("avatar", "");
             // Get list of relations for the NPC
             ConfigurationSection relationsSection = npcData.getConfigurationSection("relations");
             Map<String, Integer> relations = new HashMap<>();
@@ -125,7 +128,7 @@ public class NPCUtils {
             }
 
             plugin.saveNPCData(npcName, npcRole, existingContext, npcConversationHistory, location);
-            return new NPCContext(npcName, npcRole, existingContext, relations, storyLocation, npcConversationHistory);
+            return new NPCContext(npcName, npcRole, existingContext, relations, storyLocation, avatar, npcConversationHistory);
         }
         catch (Exception e) {
             Bukkit.getLogger().warning("Error while updating NPC context: " + e.getMessage());

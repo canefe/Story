@@ -40,14 +40,14 @@ public class NPCContextGenerator {
 
         // Construct the context
         return  npcName + personality +
-                " The time is " + hours + ":" + String.format("%02d", minutes) + " in the " + season;
+                " The time is " + hours + ":" + String.format("%02d", minutes) + " and the season is " + season +". ";
 
     }
 
     public String updateContext(String context, String npcName, int hours, int minutes, String season, String date) {
         Bukkit.getLogger().info("Updating context for NPC: " + npcName);
         context = context.replaceAll("The time is \\d{1,2}:\\d{2}", "The time is " + hours + ":" + String.format("%02d", minutes));
-        context = context.replaceAll("in the \\w+", "in the " + season);
+        context = context.replaceAll("and the season is \\w+", "and the season is " + season);
         context = context.replaceAll("The date is \\d{4}-\\d{2}-\\d{2}", "The date is " + date);
         return context;
     }

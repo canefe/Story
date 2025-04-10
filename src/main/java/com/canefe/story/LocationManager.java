@@ -86,4 +86,12 @@ public class LocationManager {
         StoryLocation storyLocation = locations.get(locationName);
         return storyLocation != null && storyLocation.getNpcNames().contains(npcName);
     }
+
+    // Save Location
+    public void saveLocation(StoryLocation storyLocation) {
+        FileConfiguration config = YamlConfiguration.loadConfiguration(new File(locationDirectory, storyLocation.getName() + ".yml"));
+        config.set("npcNames", storyLocation.getNpcNames());
+        config.set("context", storyLocation.getContext());
+        saveLocationFile(storyLocation.getName(), config);
+    }
 }

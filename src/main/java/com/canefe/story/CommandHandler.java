@@ -157,6 +157,7 @@ public class CommandHandler implements CommandExecutor {
 
                 plugin.conversationManager.showThinkingHolo(npc);
 
+        NPCUtils.NPCContext npcContext = plugin.npcUtils.getOrCreateContextForNPC(npcName);
 
 
 
@@ -168,8 +169,10 @@ public class CommandHandler implements CommandExecutor {
                 plugin.conversationManager.removeHologramTask(npcName);
                 DHAPI.removeHologram(plugin.getNPCUUID(npcName).toString());
 
+                String colorCode = plugin.randomColor(npcName);
+
                 // Broadcast the NPC's message
-                plugin.broadcastNPCMessage(message, npcName, false, null, null, null, "#599B45");
+                plugin.broadcastNPCMessage(message, npcName, false, npc, null, null, npcContext.avatar, colorCode);
             }, 60L); // 3 seconds (60 ticks)
     }
 

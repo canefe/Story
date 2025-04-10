@@ -12,6 +12,7 @@ public class NPCData {
     private final StoryLocation storyLocation; // location of the NPC for local general context
     private final String context;
     private final List<Story.ConversationMessage> conversationHistory; // conversation history of the NPC
+    private final String avatar = ""; // default avatar for the NPC
 
     public NPCData(String name, String role, StoryLocation storyLocation, String context, List<Story.ConversationMessage> conversationHistory) {
         this.name = name;

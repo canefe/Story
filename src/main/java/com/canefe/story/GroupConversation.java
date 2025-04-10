@@ -43,6 +43,15 @@ public class GroupConversation {
         return new ArrayList<>(npcs);
     }
 
+    public NPC getNPCByName(String name) {
+        for (NPC npc : npcs) {
+            if (npc.getName().equalsIgnoreCase(name)) {
+                return npc;
+            }
+        }
+        return null; // Return null if no NPC with the given name is found
+    }
+
     public boolean addNPC(NPC npc) {
         String npcName = npc.getName();
         npcs.add(npc);
