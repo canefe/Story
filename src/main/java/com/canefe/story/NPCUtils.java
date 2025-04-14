@@ -1,5 +1,6 @@
 package com.canefe.story;
 
+import com.canefe.story.conversation.ConversationMessage;
 import me.casperge.realisticseasons.api.SeasonsAPI;
 import me.casperge.realisticseasons.calendar.Date;
 import me.casperge.realisticseasons.season.Season;
@@ -72,9 +73,9 @@ public class NPCUtils {
         public Map<String, Integer> relations;
         public StoryLocation location;
         public String avatar;
-        public List<Story.ConversationMessage> conversationHistory;
+        public List<ConversationMessage> conversationHistory;
 
-        public NPCContext(String npcName, String npcRole, String existingContext, Map<String, Integer> relations, StoryLocation storyLocation, String avatar, List<Story.ConversationMessage> npcConversationHistory) {
+        public NPCContext(String npcName, String npcRole, String existingContext, Map<String, Integer> relations, StoryLocation storyLocation, String avatar, List<ConversationMessage> npcConversationHistory) {
             this.npcName = npcName;
             this.npcRole = npcRole;
             this.context = existingContext;
@@ -108,7 +109,7 @@ public class NPCUtils {
             return avatar;
         }
 
-        public List<Story.ConversationMessage> getConversationHistory() {
+        public List<ConversationMessage> getConversationHistory() {
             return conversationHistory;
         }
     }
@@ -148,11 +149,11 @@ public class NPCUtils {
             }
 
             // Add context to the conversation history
-            List<Story.ConversationMessage> npcConversationHistory = plugin.getMessages(npcData);
+            List<ConversationMessage> npcConversationHistory = plugin.getMessages(npcData);
             if (npcConversationHistory.isEmpty()) {
-                npcConversationHistory.add(new Story.ConversationMessage("system", existingContext));
+                npcConversationHistory.add(new ConversationMessage("system", existingContext));
             } else if (!Objects.equals(npcConversationHistory.get(0).getContent(), existingContext)) {
-                npcConversationHistory.set(0, new Story.ConversationMessage("system", existingContext));
+                npcConversationHistory.set(0, new ConversationMessage("system", existingContext));
             }
 
             plugin.saveNPCData(npcName, npcRole, existingContext, npcConversationHistory, location);

@@ -22,7 +22,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-import com.canefe.story.Story.ConversationMessage;
+import com.canefe.story.conversation.ConversationMessage;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 
@@ -487,10 +487,10 @@ public class ConversationManager {
                                                       String greetingMessage, NPCUtils.NPCContext npcContext) {
         conversation.addNPC(npc);
         String joinMessage = npc.getName() + " has joined the conversation.";
-        conversation.addMessage(new Story.ConversationMessage("system", joinMessage));
+        conversation.addMessage(new ConversationMessage("system", joinMessage));
 
         if (greetingMessage != null && !greetingMessage.isEmpty()) {
-            conversation.addMessage(new Story.ConversationMessage(
+            conversation.addMessage(new ConversationMessage(
                     "assistant", npc.getName() + ": " + greetingMessage));
 
             plugin.broadcastNPCMessage(
@@ -682,7 +682,7 @@ public class ConversationManager {
 
         // System message about NPC joining
         String joinMessage = npc.getName() + " has joined the conversation.";
-        conversation.addMessage(new Story.ConversationMessage("system", joinMessage));
+        conversation.addMessage(new ConversationMessage("system", joinMessage));
 
         String finalGreetingMessage = greetingMessage;
 
@@ -694,7 +694,7 @@ public class ConversationManager {
         // Handle greeting message if provided
         if (finalGreetingMessage != null && !finalGreetingMessage.isEmpty()) {
             // Add NPC's greeting to the conversation
-            conversation.addMessage(new Story.ConversationMessage(
+            conversation.addMessage(new ConversationMessage(
                     "assistant", npc.getName() + ": " + finalGreetingMessage));
 
             // Broadcast the greeting message
@@ -721,7 +721,7 @@ public class ConversationManager {
         String npcName = npc.getName();
 
         // Add the greeting to conversation history
-        conversation.addMessage(new Story.ConversationMessage(npcName, greeting));
+        conversation.addMessage(new ConversationMessage(npcName, greeting));
         NPCUtils.NPCContext npcContext = plugin.npcUtils.getOrCreateContextForNPC(npcName);
 
         // Broadcast the greeting message
@@ -778,7 +778,7 @@ public class ConversationManager {
         }
 
         // Add recent conversation history for context
-        List<Story.ConversationMessage> recentHistory = conversation.getConversationHistory()
+        List<ConversationMessage> recentHistory = conversation.getConversationHistory()
                 .subList(Math.max(conversation.getConversationHistory().size() - 10, 0), conversation.getConversationHistory().size());
 
         prompts.addAll(recentHistory);
@@ -798,7 +798,7 @@ public class ConversationManager {
         }
 
         // Add system context
-        prompts.add(new Story.ConversationMessage("system",
+        prompts.add(new ConversationMessage("system",
                 npcContext.context +
                         "\n\nYou are joining an ongoing conversation with: " + participantsStr.toString() +
                         "\n\nGenerate a greeting or introduction that acknowledges the ongoing conversation. " +
@@ -807,7 +807,7 @@ public class ConversationManager {
 
 
         // Add final instruction
-        prompts.add(new Story.ConversationMessage("user",
+        prompts.add(new ConversationMessage("user",
                 "Write a single greeting or introduction line as " + npcName + " joining this conversation."));
 
         // Generate the greeting
@@ -1031,7 +1031,7 @@ public class ConversationManager {
             // Add any found contexts to the conversation if not already added
             for (LoreBookManager.LoreContext context : relevantContexts) {
                 if (addedLoreNames.add(context.getLoreName())) {
-                    conversation.addMessage(new Story.ConversationMessage("system", context.getContext()));
+                    conversation.addMessage(new ConversationMessage("system", context.getContext()));
                     plugin.getLogger().info("Added lore context from '" + context.getLoreName() +
                             "' to conversation based on message: " + messageContent);
                 }

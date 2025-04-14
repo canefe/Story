@@ -11,10 +11,6 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
-import org.bukkit.configuration.file.FileConfiguration;
-import org.bukkit.configuration.file.YamlConfiguration;
-// import ConversationMessage from Story.java
-import com.canefe.story.Story.ConversationMessage;
 
 import java.util.*;
 import java.util.Arrays;

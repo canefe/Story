@@ -1,5 +1,6 @@
 package com.canefe.story;
 
+import com.canefe.story.conversation.ConversationMessage;
 import org.bukkit.Bukkit;
 
 import java.util.*;
@@ -24,14 +25,14 @@ public class RumorManager {
      * Analyzes a conversation to extract significant information
      * that should be remembered by NPCs or spread as rumors
      */
-    public void processConversationSignificance(List<Story.ConversationMessage> history, List<String> npcNames, String locationName) {
+    public void processConversationSignificance(List<ConversationMessage> history, List<String> npcNames, String locationName) {
         if (history.isEmpty()) return;
 
         // Create a prompt for the AI to analyze the conversation
-        List<Story.ConversationMessage> prompts = new ArrayList<>();
+        List<ConversationMessage> prompts = new ArrayList<>();
 
         // Add system prompt explaining the task
-        prompts.add(new Story.ConversationMessage("system",
+        prompts.add(new ConversationMessage("system",
                 "Analyze the following conversation and identify any significant information that should be:" +
                         "\n1. Remembered by the specific NPCs involved (personal knowledge)" +
                         "\n2. Spread as rumors throughout the location (location-based knowledge)" +

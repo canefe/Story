@@ -1,5 +1,6 @@
 package com.canefe.story;
 
+import com.canefe.story.npc.NPCData;
 import net.citizensnpcs.api.CitizensAPI;
 import net.citizensnpcs.api.npc.NPC;
 import org.bukkit.configuration.file.FileConfiguration;

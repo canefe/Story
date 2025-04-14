@@ -1,5 +1,6 @@
 package com.canefe.story;
 
+import com.canefe.story.conversation.ConversationMessage;
 import net.citizensnpcs.api.npc.NPC;
 import org.bukkit.entity.Player;
 
@@ -13,7 +14,7 @@ public class GroupConversation {
     private final List<UUID> players;
     private final List<String> npcNames;
     private final List<NPC> npcs;
-    private final List<Story.ConversationMessage> conversationHistory;
+    private final List<ConversationMessage> conversationHistory;
     private boolean active;
 
     public GroupConversation(List<UUID> players, List<NPC> initialNPCs) {
@@ -93,11 +94,11 @@ public class GroupConversation {
         return false;
     }
 
-    public List<Story.ConversationMessage> getConversationHistory() {
+    public List<ConversationMessage> getConversationHistory() {
         return new ArrayList<>(conversationHistory);
     }
 
-    public void addMessage(Story.ConversationMessage message) {
+    public void addMessage(ConversationMessage message) {
         conversationHistory.add(message);
     }
 

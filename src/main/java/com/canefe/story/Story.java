@@ -1,5 +1,6 @@
 package com.canefe.story;
 
+import com.canefe.story.conversation.ConversationMessage;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -135,7 +136,8 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
 
     @Override
     public void onLoad() {
-        CommandAPI.onLoad(new CommandAPIBukkitConfig(this).verboseOutput(true)); // Load with verbose output
+        CommandAPI.onLoad(new CommandAPIBukkitConfig(this)
+                .silentLogs(true));
     }
 
     @Override
@@ -2694,22 +2696,5 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
         return distanceSquared <= radiusSquared;
     }
 
-    // Inner class to represent conversation messages
-    public static class ConversationMessage {
-        private String role;
-        private String content;
 
-        public ConversationMessage(String role, String content) {
-            this.role = role;
-            this.content = content;
-        }
-
-        public String getRole() {
-            return role;
-        }
-
-        public String getContent() {
-            return content;
-        }
-    }
 }

@@ -1,11 +1,10 @@
 package com.canefe.story;
 
+import com.canefe.story.conversation.ConversationMessage;
+import com.canefe.story.npc.NPCData;
 import net.citizensnpcs.api.ai.Navigator;
-import net.citizensnpcs.api.ai.NavigatorParameters;
-import net.citizensnpcs.api.ai.PathStrategy;
 import net.citizensnpcs.api.ai.event.NavigationCompleteEvent;
 import net.citizensnpcs.api.npc.NPC;
-import net.citizensnpcs.npc.ai.AStarNavigationStrategy;
 import net.citizensnpcs.trait.RotationTrait;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -121,7 +120,7 @@ public class NPCManager {
         return targetLocation;
     }
 
-    public void eventGoToPlayerAndTalk(NPC npc, Player player, String message, List<Story.ConversationMessage> conversationHistory) {
+    public void eventGoToPlayerAndTalk(NPC npc, Player player, String message, List<ConversationMessage> conversationHistory) {
         // Get NPC's context
         NPCUtils.NPCContext npcContext = plugin.npcUtils.getOrCreateContextForNPC(npc.getName());
 
@@ -160,16 +159,16 @@ public class NPCManager {
                         }
 
                         if (conversationHistory != null) {
-                            for (Story.ConversationMessage message : conversationHistory) {
+                            for (ConversationMessage message : conversationHistory) {
                                 conversation.addMessage(message);
                             }
                         } else {
                             // Add system message about the NPC initiating conversation
-                            conversation.addMessage(new Story.ConversationMessage("system",
+                            conversation.addMessage(new ConversationMessage("system",
                                     npc.getName() + " approached " + playerName + " and started a conversation."));
 
                             // Add NPC message to conversation
-                            conversation.addMessage(new Story.ConversationMessage("assistant", npc.getName() + ": " + message));
+                            conversation.addMessage(new ConversationMessage("assistant", npc.getName() + ": " + message));
                         }
                         // Broadcast message
                         plugin.broadcastNPCMessage(message, npc.getName(), false, npc, player.getUniqueId(),
@@ -221,7 +220,7 @@ public class NPCManager {
                     GroupConversation conversation = plugin.conversationManager.startGroupConversation(player, npcs);
 
                     if (conversation != null) {
-                        conversation.addMessage(new Story.ConversationMessage("assistant", npc.getName() + ": " + message));
+                        conversation.addMessage(new ConversationMessage("assistant", npc.getName() + ": " + message));
                         plugin.broadcastNPCMessage(message, npc.getName(), false, npc, player.getUniqueId(),
                                 player, npcContext.avatar, plugin.randomColor(npc.getName()));
                         plugin.scheduleProximityCheck(player, npc, conversation);
@@ -270,7 +269,7 @@ public class NPCManager {
                             String colorCode = plugin.randomColor(npc.getName());
 
                             // Send the message to the player
-                            conversation.addMessage(new Story.ConversationMessage("assistant", npc.getName() + ": " + message));
+                            conversation.addMessage(new ConversationMessage("assistant", npc.getName() + ": " + message));
                             plugin.broadcastNPCMessage(message, npc.getName(), false, npc, player.getUniqueId(), player, npcContext.avatar, colorCode);
                         }
                     }
@@ -617,8 +616,8 @@ public class NPCManager {
                         npcs.add(targetNPC);
                         GroupConversation conversation = plugin.conversationManager.startGroupConversationNoPlayer(npcs);
                         // Send the message to the player
-                        conversation.addMessage(new Story.ConversationMessage("system", npc.getName() + ": " + firstMessage));
-                        conversation.addMessage(new Story.ConversationMessage("user", targetNPC.getName() + " is listening..."));
+                        conversation.addMessage(new ConversationMessage("system", npc.getName() + ": " + firstMessage));
+                        conversation.addMessage(new ConversationMessage("user", targetNPC.getName() + " is listening..."));
 
                         String colorCode = plugin.randomColor(npc.getName());
 
