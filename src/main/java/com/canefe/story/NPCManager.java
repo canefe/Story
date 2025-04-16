@@ -1,7 +1,7 @@
 package com.canefe.story;
 
 import com.canefe.story.conversation.ConversationMessage;
-import com.canefe.story.npc.NPCData;
+import com.canefe.story.npc.data.NPCData;
 import net.citizensnpcs.api.ai.Navigator;
 import net.citizensnpcs.api.ai.event.NavigationCompleteEvent;
 import net.citizensnpcs.api.npc.NPC;
@@ -615,6 +615,9 @@ public class NPCManager {
                         npcs.add(npc);
                         npcs.add(targetNPC);
                         GroupConversation conversation = plugin.conversationManager.startGroupConversationNoPlayer(npcs);
+
+                        if (conversation == null) return;
+
                         // Send the message to the player
                         conversation.addMessage(new ConversationMessage("system", npc.getName() + ": " + firstMessage));
                         conversation.addMessage(new ConversationMessage("user", targetNPC.getName() + " is listening..."));
@@ -623,7 +626,13 @@ public class NPCManager {
 
                         plugin.broadcastNPCMessage(firstMessage, npc.getName(), false, npc, null, null, npcContext.avatar, colorCode);
 
-                        plugin.conversationManager.generateGroupNPCResponses(conversation, null);
+                        // Grab NPC name that is not the one that just joined
+                        String otherNPCName = conversation.getNpcNames().stream()
+                                .filter(name -> !name.equals(npc.getName()))
+                                .findFirst()
+                                .orElse(null);
+
+                        plugin.conversationManager.generateGroupNPCResponses(conversation, null, otherNPCName);
 
 
                     }

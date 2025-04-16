@@ -16,6 +16,7 @@ public class GroupConversation {
     private final List<NPC> npcs;
     private final List<ConversationMessage> conversationHistory;
     private boolean active;
+    public boolean chatEnabled = true;
 
     public GroupConversation(List<UUID> players, List<NPC> initialNPCs) {
         this.players = players;

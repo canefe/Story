@@ -96,7 +96,7 @@ public class CommandHandler implements CommandExecutor {
         }
         // get a random player name from the convo
         Player randomPlayer = Bukkit.getPlayer(convo.getPlayers().iterator().next());
-        plugin.conversationManager.generateGroupNPCResponses(convo, randomPlayer);
+        plugin.conversationManager.generateGroupNPCResponses(convo, randomPlayer, null);
     }
 
     private void reloadConfig(Player player) {

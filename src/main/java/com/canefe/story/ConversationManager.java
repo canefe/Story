@@ -143,7 +143,7 @@ public class ConversationManager {
         return newConversation;
     }
 
-    public void StopAllConversations() {
+    public void stopAllConversations() {
         // Create a copy of the conversations to avoid concurrent modification
         List<GroupConversation> conversationsToEnd = new ArrayList<>(activeConversations.values());
 
@@ -710,8 +710,13 @@ public class ConversationManager {
             );
         }
 
+        // Grab NPC name that is not the one that just joined
+        String otherNPCName = conversation.getNpcNames().stream()
+                .filter(name -> !name.equals(npc.getName()))
+                .findFirst()
+                .orElse(null);
         // Generate a response from the other NPCs in the conversation
-        generateGroupNPCResponses(conversation, null);
+        generateGroupNPCResponses(conversation, null, otherNPCName);
     }
 
     /**
@@ -729,8 +734,14 @@ public class ConversationManager {
             String colorCode = plugin.randomColor(npcName);
             plugin.broadcastNPCMessage(greeting, npcName, false, npc, null, null, npcContext.avatar, colorCode);
 
+            // Grab NPC name that is not the one that just joined
+            String otherNPCName = conversation.getNpcNames().stream()
+                    .filter(name -> !name.equals(npc.getName()))
+                    .findFirst()
+                    .orElse(null);
+
             // Generate responses from other NPCs in the conversation
-            generateGroupNPCResponses(conversation, null);
+            generateGroupNPCResponses(conversation, null, otherNPCName);
         });
     }
 
@@ -895,8 +906,9 @@ public class ConversationManager {
 
         // Schedule a new task to generate responses after 5 seconds
         int taskId = Bukkit.getScheduler().runTaskLater(plugin, () -> {
+
             // Generate responses from all NPCs sequentially
-            generateGroupNPCResponses(conversation, player);
+            generateGroupNPCResponses(conversation, player, null);
             // Remove from scheduled tasks map since it's now executing
             scheduledTasks.remove(conversation);
         }, plugin.getResponseDelay() * 20L).getTaskId(); // 5 seconds * 20 ticks/second
@@ -1040,7 +1052,7 @@ public class ConversationManager {
     }
 
     // Generate NPC responses sequentially for the group conversation
-    public CompletableFuture<Void> generateGroupNPCResponses(GroupConversation conversation, Player player) {
+    public CompletableFuture<Void> generateGroupNPCResponses(GroupConversation conversation, Player player, String forceSpeaker) {
         // Skip if no NPCs in conversation
         if (conversation.getNpcNames().isEmpty()) {
             return CompletableFuture.completedFuture(null);
@@ -1054,7 +1066,7 @@ public class ConversationManager {
             showListeningHolo(npc);
         }
 
-        return determineNextSpeaker(conversation, player)
+        return determineNextSpeaker(conversation, player, forceSpeaker)
                 .thenCompose(nextSpeakerName -> {
                     if (nextSpeakerName == null) {
                         return CompletableFuture.completedFuture(null);
@@ -1179,9 +1191,14 @@ public class ConversationManager {
                 });
     }
 
-    private CompletableFuture<String> determineNextSpeaker(GroupConversation conversation, Player player) {
+    private CompletableFuture<String> determineNextSpeaker(GroupConversation conversation, Player player, String forceSpeaker) {
         CompletableFuture<String> future = new CompletableFuture<>();
 
+
+        if (forceSpeaker != null && !forceSpeaker.isEmpty()) {
+            future.complete(forceSpeaker);
+            return future;
+        }
 
         // Short-circuit for the simple case of only one NPC
         if (conversation.getNpcNames().size() == 1) {

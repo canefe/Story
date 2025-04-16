@@ -1,6 +1,9 @@
 package com.canefe.story;
 
+import com.canefe.story.command.base.CommandManager;
 import com.canefe.story.conversation.ConversationMessage;
+import com.canefe.story.npc.data.NPCDataManager;
+import com.canefe.story.util.Msg;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -58,13 +61,15 @@ import java.util.stream.Collectors;
 
 public final class Story extends JavaPlugin implements Listener, CommandExecutor {
 
-    static Story instance;
+    public static Story instance;
 
     // Toggle for NPC chat
     private boolean chatEnabled = true;
 
     // Map to store current NPC per player (UUID -> NPC Name)
     public Map<UUID, UUID> playerCurrentNPC = new HashMap<>();
+
+    public Map<UUID, Integer> playerSpyingConversation = new HashMap<>();
 
     // List of players that disabled right-clicking start conversation
     private List<String> disabledPlayers = new ArrayList<>();
@@ -116,10 +121,12 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
 
     private NPCScheduleManager scheduleManager;
 
+    private CommandManager commandManager;
+
     private boolean itemsAdderEnabled = false; // Check if ItemsAdder is enabled
 
-    // PlaceholderAPI expansion String that supports color codes
 
+    private final MiniMessage miniMessage = MiniMessage.miniMessage(); // MiniMessage instance for parsing messages
     // Add these fields to the Story class
     private Map<UUID, String> playerQuestTitles = new HashMap<>();
     private Map<UUID, String> playerQuestObjectives = new HashMap<>();
@@ -130,14 +137,18 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
     private static final long COOLDOWN_TIME = 30000; // 10 seconds in milliseconds
 
 
+    public MiniMessage getMiniMessage() {
+        return miniMessage;
+    }
+
     public static String colorize(String message) {
         return ChatColor.translateAlternateColorCodes('&', message);
     }
 
     @Override
     public void onLoad() {
-        CommandAPI.onLoad(new CommandAPIBukkitConfig(this)
-                .silentLogs(true));
+        commandManager = new CommandManager(this);
+        commandManager.onLoad();
     }
 
     @Override
@@ -168,827 +179,15 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
             getLogger().warning("ItemsAdder not found, avatar features will be disabled.");
         }
 
-        CommandAPI.onEnable();
-        // Register commands with the new CommandHandler
-        CommandHandler commandHandler = new CommandHandler(this);
-        getCommand("togglegpt").setExecutor(commandHandler);
-        getCommand("aireload").setExecutor(commandHandler);
-        getCommand("feednpc").setExecutor(commandHandler);
-        getCommand("g").setExecutor(commandHandler);
-        getCommand("setcurq").setExecutor(commandHandler);
-        getCommand("endconv").setExecutor(commandHandler);
-
         // Command to hide the health bar "vanish"
         //BetterHealthBar.inst().playerManager().player("").uninject();
         loadTeamsAndQuests();
-
-        // a command called /story with subcommand location create
-        new CommandAPICommand("story")
-                .withPermission("storymaker.story")
-                .withSubcommand(new CommandAPICommand("location")
-                        .withSubcommand(new CommandAPICommand("create")
-                                .withArguments(new StringArgument("location_name"))
-                                .executesPlayer((player, args) -> {
-                                    String locationName = (String) args.get("location_name");
-                                    Location playerLocation = player.getLocation();
-                                    if (locationManager.createLocation(locationName, playerLocation)) {
-                                        player.sendMessage(ChatColor.GREEN + "Location " + locationName + " created.");
-                                    } else {
-                                        player.sendMessage(ChatColor.RED + "Location " + locationName + " already exists.");
-                                    }
-                                })
-                        )
-                )
-                // Add this to your existing command chain after .withSubcommand(new CommandAPICommand("location")...)
-                .withSubcommand(new CommandAPICommand("quest")
-                        .withPermission("storymaker.quest")
-                        .withSubcommand(new CommandAPICommand("set")
-                                .withArguments(new PlayerArgument("player"))
-                                .withArguments(new GreedyStringArgument("prompt"))
-                                .executesPlayer((player, args) -> {
-                                    Player target = (Player) args.get("player");
-                                    String prompt = (String) args.get("prompt");
-
-                                    // Generate quest using AI
-                                    generateQuestForPlayer(target, prompt, player);
-                                })
-                        )
-                        .withSubcommand(new CommandAPICommand("clear")
-                                .withArguments(new PlayerArgument("player"))
-                                .executesPlayer((player, args) -> {
-                                    Player target = (Player) args.get("player");
-                                    clearPlayerQuest(target);
-                                    player.sendMessage(ChatColor.GREEN + "Cleared quest for " + target.getName());
-                                })
-                        )
-                        .withSubcommand(new CommandAPICommand("view")
-                                .withOptionalArguments(new PlayerArgument("player"))
-                                .executesPlayer((player, args) -> {
-                                    Player target = (Player) args.getOrDefault("player", player);
-                                    showPlayerQuest(player, target);
-                                })
-                        )
-                )
-                .withSubcommand(new CommandAPICommand("team")
-                        .withPermission("storymaker.team")
-                        .withSubcommand(new CommandAPICommand("create")
-                                .withArguments(new StringArgument("team_name"))
-                                .executesPlayer((player, args) -> {
-                                    String teamName = (String) args.get("team_name");
-                                    createTeam(teamName, player);
-                                })
-                        )
-                        .withSubcommand(new CommandAPICommand("add")
-                                .withArguments(new StringArgument("team_name"))
-                                .withArguments(new PlayerArgument("player"))
-                                .executesPlayer((player, args) -> {
-                                    String teamName = (String) args.get("team_name");
-                                    Player target = (Player) args.get("player");
-                                    addPlayerToTeam(teamName, target, player);
-                                })
-                        )
-                        .withSubcommand(new CommandAPICommand("remove")
-                                .withArguments(new StringArgument("team_name"))
-                                .withArguments(new PlayerArgument("player"))
-                                .executesPlayer((player, args) -> {
-                                    String teamName = (String) args.get("team_name");
-                                    Player target = (Player) args.get("player");
-                                    removePlayerFromTeam(teamName, target, player);
-                                })
-                        )
-                        .withSubcommand(new CommandAPICommand("list")
-                                .withOptionalArguments(new StringArgument("team_name"))
-                                .executesPlayer((player, args) -> {
-                                    String teamName = (String) args.getOrDefault("team_name", "");
-                                    listTeams(player, teamName);
-                                })
-                        )
-                        .withSubcommand(new CommandAPICommand("delete")
-                                .withArguments(new StringArgument("team_name"))
-                                .executesPlayer((player, args) -> {
-                                    String teamName = (String) args.get("team_name");
-                                    deleteTeam(teamName, player);
-                                })
-                        )
-                )
-                .register();
-
-        new CommandAPICommand("maketalk")
-                .withPermission("storymaker.chat.toggle")
-                .withArguments(new GreedyStringArgument("npc"))
-                .executesPlayer((player, args) -> {
-                    String npcName = (String) args.get("npc");
-                    player.sendMessage(ChatColor.GRAY + "You made NPC '" + npcName + "' talk using AI.");
-
-                    // Fetch NPC conversation
-                    GroupConversation convo = conversationManager.getActiveNPCConversation(npcName);
-                    if (convo == null) {
-                        player.sendMessage(ChatColor.RED + "No active conversation found for NPC '" + npcName + "'.");
-                        return;
-                    }
-                    // get a random player name from the convo
-                    //Player randomPlayer = Bukkit.getPlayer(convo.getPlayers().iterator().next());
-                    conversationManager.generateGroupNPCResponses(convo, null);
-                })
-                .register();
-
-        new CommandAPICommand("spawnnpc")
-                .withPermission("storymaker.npc.spawn")
-                .withArguments(new StringArgument("npc"))
-                .withArguments(new GreedyStringArgument("message"))
-                .executesPlayer((player, args) -> {
-                    String npcName = (String) args.get("npc");
-                    String message = (String) args.get("message");
-                    Location location = player.getLocation();
-                    NPCSpawner npcSpawner = new NPCSpawner(this);
-                    // Get a location that is 10 block away from the player
-                    location.add(location.getDirection().multiply(10));
-
-                    npcSpawner.spawnNPC(npcName, location, player, message);
-                })
-                .register();
-
-        new CommandAPICommand("startconv")
-                .withPermission("storymaker.conversation.start")
-                .withArguments(new PlayerArgument("player"))
-                .executesPlayer((player, args) -> {
-                    Player target = (Player) args.get("player");
-                    NPC npc = CitizensAPI.getNPCRegistry().getByUniqueId(
-                            playerCurrentNPC.get(player.getUniqueId()));
-                    if (target == null) {
-                        player.sendMessage(ChatColor.RED + "Player not found.");
-                        return;
-                    }
-                    String npcName = npc.getName();
-                    if (conversationManager.isNPCInConversation(npcName)) {
-                        if (conversationManager.addPlayerToConversation(target, npcName)) {
-                            player.sendMessage(ChatColor.GRAY + "Added " + target + " to the conversation with " + npcName);
-                        } else {
-                            player.sendMessage(ChatColor.RED + "" + target + " is already in the conversation.");
-                        }
-                    } else {
-                        // Start a new conversation
-                        List<NPC> npcs = new ArrayList<>();
-                        npcs.add(npc);
-                        conversationManager.startGroupConversation(target, npcs);
-                    }
-                })
-                .register();
-
-        // /fendconv <player>
-        new CommandAPICommand("fendconv")
-                .withPermission("storymaker.conversation.end")
-                .withArguments(new PlayerArgument("player"))
-                .executesPlayer((player, args) -> {
-                    Player target = (Player) args.get("player");
-                    if (conversationManager.hasActiveConversation(target)) {
-                        conversationManager.endConversation(target);
-                        player.sendMessage(ChatColor.GRAY + "Ended conversation with " + target.getName());
-                    } else {
-                        player.sendMessage(ChatColor.RED + target.getName() + " is not in an active conversation.");
-                    }
-                })
-                .register();
-
-        new CommandAPICommand("togglechat")
-                .withPermission("storymaker.chat.toggle")
-                .withOptionalArguments(new PlayerArgument("target"))
-                .executesPlayer((player, args) -> {
-                    Player target = (Player) args.get("target");
-                    if (target != null) {
-                        if (disabledPlayers.contains(target.getName())) {
-                            disabledPlayers.remove(target.getName());
-                            player.sendMessage(ChatColor.GRAY + "Enabled chat for " + target.getName());
-                        } else {
-                            disabledPlayers.add(target.getName());
-                            player.sendMessage(ChatColor.GRAY + "Disabled chat for " + target.getName());
-                        }
-                    } else {
-                        if (disabledPlayers.contains(player.getName())) {
-                            disabledPlayers.remove(player.getName());
-                            player.sendMessage(ChatColor.GRAY + "Enabled chat for yourself.");
-                        } else {
-                            disabledPlayers.add(player.getName());
-                            player.sendMessage(ChatColor.GRAY + "Disabled chat for yourself.");
-                        }
-                        saveDataFiles();
-                    }
-
-                })
-                .register();
-
-        new CommandAPICommand("setcurnpc")
-                .withPermission("storymaker.npc.set")
-                .executesPlayer((player, args) -> {
-                    //Get the NPC that the player is looking at
-                    NPC npc = CitizensAPI.getNPCRegistry().getNPC(player.getTargetEntity(5));
-                    if(npc == null) {
-                        player.sendMessage(ChatColor.RED + "You are not looking at an NPC!");
-                        return;
-                    }
-
-                    //Set the player's current NPC to the NPC they are looking at
-                    playerCurrentNPC.put(player.getUniqueId(), npc.getUniqueId());
-                })
-                .register();
-
-        // /convadd <player> <npc> // add player to existing conv on with npc
-        new CommandAPICommand("convadd")
-                .withPermission("storymaker.conversation.add")
-                .withArguments(new PlayerArgument("player"))
-                .withArguments(new GreedyStringArgument("npc"))
-                .executesPlayer((player, args) -> {
-                    Player target = (Player) args.get("player");
-                    String npcName = (String) args.get("npc");
-
-                    if (conversationManager.isNPCInConversation(npcName)) {
-                        if (conversationManager.addPlayerToConversation(target, npcName)) {
-                            player.sendMessage(ChatColor.GRAY + "Added " + target + " to the conversation with " + npcName);
-                        } else {
-                            player.sendMessage(ChatColor.RED + "" + target + " is already in the conversation.");
-                        }
-                    } else {
-                        player.sendMessage(ChatColor.RED + npcName + " is not in an active conversation.");
-                    }
-                })
-                .register();
-
-        // command /disablenpc <npc> // disable npc from talking
-        new CommandAPICommand("togglenpc")
-                .withPermission("storymaker.npc.disable")
-                .withArguments(new GreedyStringArgument("npc"))
-                .executesPlayer((player, args) -> {
-                    String npcName = (String) args.get("npc");
-                    if (npcDataManager.loadNPCData(npcName) != null) {
-                        if (disabledNPCs.contains(getNPCUUID(npcName))) {
-                            player.sendMessage(ChatColor.RED + "NPC " + npcName + " is already disabled. Enabling...");
-                            enableNPCTalking(npcName);
-                            return;
-                        }
-                        disableNPCTalking(npcName);
-                        player.sendMessage(ChatColor.GRAY + "Disabled " + npcName + " from talking.");
-                    } else {
-                        player.sendMessage(ChatColor.RED + "NPC " + npcName + " not found.");
-                    }
-                })
-                .register();
-
-
-        // command /toggleradiant // disable radiant conversations
-        new CommandAPICommand("toggleradiant")
-                .withPermission("storymaker.conversation.toggle")
-                .executesPlayer((player, args) -> {
-                    if (conversationManager.isRadiantEnabled()) {
-                        conversationManager.setRadiantEnabled(false);
-                        player.sendMessage(ChatColor.GRAY + "Radiant conversations disabled.");
-                    } else {
-                        conversationManager.setRadiantEnabled(true);
-                        player.sendMessage(ChatColor.GRAY + "Radiant conversations enabled.");
-                    }
-                })
-                .register();
-
-        // commant /npctalk <npc_id:int> <npc_id_target:int>
-        new CommandAPICommand("npctalk")
-                .withPermission("storymaker.npc.talk")
-                .withArguments(new IntegerArgument("npc_id"))
-                .withArguments(new IntegerArgument("npc_id_target"))
-                .withArguments(new GreedyStringArgument("message"))
-                .executesPlayer((player, args) -> {
-                    int npcId = (int) args.get("npc_id");
-                    int npcIdTarget = (int) args.get("npc_id_target");
-                    String message = (String) args.get("message");
-                    NPC npc = CitizensAPI.getNPCRegistry().getById(npcId);
-                    NPC target = CitizensAPI.getNPCRegistry().getById(npcIdTarget);
-                    if (npc == null || target == null) {
-                        player.sendMessage(ChatColor.RED + "NPC not found.");
-                        return;
-                    }
-                    walkAndInitiateConversation(npc, target, message);
-                })
-                .register();
-        // command /npcply <npc_id:int> <player_name> <message>
-        new CommandAPICommand("npcply")
-                .withPermission("storymaker.npc.talk")
-                .withArguments(new IntegerArgument("npc_id"))
-                .withArguments(new PlayerArgument("player"))
-                .withArguments(new GreedyStringArgument("message"))
-                .executesPlayer((player, args) -> {
-                    int npcId = (int) args.get("npc_id");
-                    Player target = (Player) args.get("player");
-                    String message = (String) args.get("message");
-                    NPC npc = CitizensAPI.getNPCRegistry().getById(npcId);
-                    if (npc == null || target == null) {
-                        player.sendMessage(ChatColor.RED + "NPC not found.");
-                        return;
-                    }
-                    npcManager.eventGoToPlayerAndSay(npc, target.getName(), message);
-                })
-                .register();
-
-        // command /stopallconv
-        new CommandAPICommand("stopallconv")
-                .withPermission("storymaker.conversation.endall")
-                .executesPlayer((player, args) -> {
-                    conversationManager.StopAllConversations();
-                    player.sendMessage(ChatColor.GRAY + "All conversations ended.");
-                })
-                .register();
-
-
-        new CommandAPICommand("npcinit")
-                .withPermission("storymaker.npc.init")
-                .withArguments(new StringArgument("location"))
-                .withArguments(new TextArgument("npc"))
-                .withOptionalArguments(new GreedyStringArgument("prompt"))
-                .executesPlayer((player, args) -> {
-                    String npcName = (String) args.get("npc");
-                    String location = (String) args.get("location");
-                    String prompt = (String) args.getOrDefault("prompt", "");
-
-                    NPCUtils.NPCContext npcContext = NPCUtils.getInstance(this).getOrCreateContextForNPC(npcName);
-
-                    if (prompt != null && !prompt.isEmpty()) {
-                        // Inform player we're generating context
-                        player.sendMessage(ChatColor.GRAY + "Generating AI context for NPC " +
-                                ChatColor.YELLOW + npcName + ChatColor.GRAY + " based on: " +
-                                ChatColor.ITALIC + prompt);
-
-                        // Create a system message to instruct the AI
-                        List<ConversationMessage> messages = new ArrayList<>();
-                        messages.add(new ConversationMessage("system",
-                                "Generate a detailed NPC profile for a character named " + npcName +
-                                        " in the location " + location + ". Include: personality traits, " +
-                                        "background story, appearance, unique quirks, and role in society. " +
-                                        "Be creative, detailed, and make the character feel alive. " +
-                                        "Format the response as 'ROLE: [brief role description]' followed by " +
-                                        "a detailed paragraph about the character."));
-
-                        // Add the user prompt
-                        messages.add(new ConversationMessage("user", prompt));
-
-                        // Generate AI response
-                        CompletableFuture.supplyAsync(() -> getAIResponse(messages))
-                                .thenAccept(response -> {
-                                    if (response != null) {
-                                        // Parse response to extract role and context
-                                        String role;
-                                        String context;
-
-                                        // Try to extract the ROLE section
-                                        if (response.contains("ROLE:")) {
-                                            String[] parts = response.split("ROLE:", 2);
-                                            if (parts.length > 1) {
-                                                String[] roleParts = parts[1].split("\n", 2);
-                                                role = roleParts[0].trim();
-                                                context = roleParts.length > 1 ? roleParts[1].trim() : parts[1].trim();
-                                            } else {
-                                                role = "";
-                                                context = response;
-                                            }
-                                        } else {
-                                            role = "";
-                                            context = response;
-                                        }
-
-                                        // Update NPC context
-                                        npcContext.npcRole = role;
-                                        npcContext.context = context;
-
-                                        // Save the NPC data
-                                        saveNPCData(npcName, role, context, npcContext.conversationHistory, location);
-
-                                        // Inform player of success
-                                        Bukkit.getScheduler().runTask(this, () -> {
-                                            player.sendMessage(ChatColor.GREEN + "AI-generated profile for " +
-                                                    ChatColor.YELLOW + npcName + ChatColor.GREEN + " created!");
-                                            player.sendMessage(ChatColor.AQUA + "Role: " + ChatColor.WHITE + role);
-                                            player.sendMessage(ChatColor.AQUA + "Context summary: " +
-                                                    ChatColor.WHITE + (context.length() > 50 ?
-                                                    context.substring(0, 50) + "..." : context));
-                                        });
-                                    } else {
-                                        // Handle failed response
-                                        Bukkit.getScheduler().runTask(this, () -> {
-                                            player.sendMessage(ChatColor.RED + "Failed to generate AI context. Using default values.");
-                                            saveNPCData(npcName, npcContext.npcRole, npcContext.context,
-                                                    npcContext.conversationHistory, location);
-                                            player.sendMessage(ChatColor.GRAY + "Basic NPC data saved for " + npcName);
-                                        });
-                                    }
-                                });
-                    } else {
-                        // No prompt, just save existing context
-                        saveNPCData(npcName, npcContext.npcRole, npcContext.context,
-                                npcContext.conversationHistory, location);
-                        player.sendMessage(ChatColor.GRAY + "NPC data saved for " + npcName);
-                    }
-                })
-                .register();
-
-
-        // Command to make player's current NPC walk to them
-        new CommandAPICommand("comenfp")
-                .withPermission("storymaker.npc.come")
-                .withOptionalArguments(new FloatArgument("speed", 0.5f, 3.0f))
-                .executesPlayer((player, args) -> {
-                    // Get player's UUID
-                    UUID playerUUID = player.getUniqueId();
-
-                    // Check if player has a current NPC
-                    if (!playerCurrentNPC.containsKey(playerUUID)) {
-                        player.sendMessage(colorize("&cYou don't have a current NPC assigned. Use &f/setcurnpc&c first."));
-                        return;
-                    }
-
-                    // Get the NPC UUID and find the NPC
-                    UUID npcUUID = playerCurrentNPC.get(playerUUID);
-                    NPC npc = CitizensAPI.getNPCRegistry().getByUniqueId(npcUUID);
-
-                    if (npc == null || !npc.isSpawned()) {
-                        player.sendMessage(colorize("&cYour NPC is not available or not spawned."));
-                        return;
-                    }
-
-                    // Get optional speed argument
-                    float speed = (float) args.getOrDefault("speed", 1.0f);
-
-                    // Get player's current location
-                    Location playerLocation = player.getLocation();
-
-                    // Make the NPC walk to the player
-                    int taskId = npcManager.walkToLocation(
-                            npc,
-                            playerLocation,
-                            2.0,  // Stop 2 blocks away
-                            speed,
-                            30,    // 30 second timeout
-                            () -> player.sendMessage(colorize("&a" + npc.getName() + " has arrived.")),
-                            () -> player.sendMessage(colorize("&c" + npc.getName() + " couldn't reach you."))
-                    );
-
-                    if (taskId != -1) {
-                        player.sendMessage(colorize("&a" + npc.getName() + " is coming to you."));
-                    }
-                })
-                .register();
-        // command /conv <subcommand> <args>
-        new CommandAPICommand("conv")
-                .withPermission("storymaker.conversation")
-                .withSubcommand(new CommandAPICommand("list")
-                        .executesPlayer((player, args) -> {
-                            player.sendMessage(ChatColor.GRAY + "Active conversations:");
-                            for (Map.Entry<Integer, GroupConversation> entry : conversationManager.getActiveConversations().entrySet()) {
-                                Integer id = entry.getKey();
-                                GroupConversation convo = entry.getValue();
-                                MiniMessage mm = MiniMessage.miniMessage();
-                                String npcNames = String.join(", ", convo.getNpcNames());
-                                String playerNames = convo.getPlayers().stream()
-                                        .map(uuid -> {
-                                            Player ply = Bukkit.getPlayer(uuid);
-                                            return ply != null ? ply.getName() : "Unknown";
-                                        })
-                                        .collect(Collectors.joining(", "));
-
-                                // Build the feed button
-                                Component feedButton = mm.deserialize(
-                                        "<click:suggest_command:'/conv feed " + id + " Make '>" +
-                                                "<hover:show_text:'Add system message to conversation'>" +
-                                                "<gray>[<green>Feed</green>]</gray></hover></click>"
-                                );
-
-                                // Build Talk button
-                                // get a random npc name from the list
-// Build Talk button
-                                String randomNPCName = convo.getNpcNames().get(new Random().nextInt(convo.getNpcNames().size()));
-// Escape apostrophes and other special characters for command use
-                                String escapedNPCName = randomNPCName.replace("'", "\\'").replace("\"", "\\\"");
-                                Component talkButton = mm.deserialize(
-                                        "<click:run_command:'/maketalk " + escapedNPCName + "'>" +
-                                                "<hover:show_text:'Make Conversation Continue'>" +
-                                                "<gray>[<green>Talk</green>]</gray></hover></click>"
-                                );
-
-                                // Build End button
-                                // First feed the conversation to indicate the end and make all NPCs say goodbye
-                                Component endButton = mm.deserialize(
-                                        "<click:run_command:'/conv end " + id + "'>" +
-                                                "<hover:show_text:'End conversation'>" +
-                                                "<gray>[<red>End</red>]</gray></hover></click>"
-                                );
-
-                                // Force End (no goodbye)
-                                Component forceEndButton = mm.deserialize(
-                                        "<click:run_command:'/conv fend " + id + "'>" +
-                                                "<hover:show_text:'Force End conversation'>" +
-                                                "<gray>[<red>F-End</red>]</gray></hover></click>"
-                                );
-
-                                // Add Button
-                                Component addButton = mm.deserialize(
-                                        "<click:suggest_command:'/conv add " + id + " \"'>" +
-                                                "<hover:show_text:'Add NPC to conversation'>" +
-                                                "<gray>[<green>Add</green>]</gray></hover></click>"
-                                );
-
-                                // Make NPC names clickable
-                                Component clickableNPCNames = Component.empty();
-                                boolean first = true;
-
-                                for (String npcName : convo.getNpcNames()) {
-                                    String escapedName = npcName.replace("'", "\\'").replace("\"", "\\\"");
-                                    Component npcComponent = mm.deserialize(
-                                            "<click:run_command:'/conv npc " + id + " " + escapedName + "'>" +
-                                                    "<hover:show_text:'Control " + escapedName + "'>" +
-                                                    "<aqua>" + npcName + "</aqua></hover></click>"
-                                    );
-
-                                    if (!first) {
-                                        clickableNPCNames = clickableNPCNames.append(mm.deserialize("<gray>, </gray>"));
-                                    } else {
-                                        first = false;
-                                    }
-                                    clickableNPCNames = clickableNPCNames.append(npcComponent);
-                                }
-
-// Build the prefix with conversation ID
-                                Component prefix = mm.deserialize(
-                                        String.format("<gray>[<green>%d</green>] </gray>", id)
-                                );
-
-// Now append the clickable NPC names component
-                                Component fullPrefix = prefix.append(clickableNPCNames);
-
-// And finally append the player names
-                                fullPrefix = fullPrefix.append(mm.deserialize(String.format("<gray>, <yellow>%s</yellow> </gray>", playerNames)));
-
-// Modify the existing code to use fullPrefix instead of prefix when sending the message
-
-                                // Final message = prefix + feedButton
-                                Component commands = feedButton;
-                                commands = commands.append(mm.deserialize("<gray> | </gray>"));
-                                commands = commands.append(talkButton);
-                                commands = commands.append(mm.deserialize("<gray> | </gray>"));
-                                commands = commands.append(addButton);
-                                commands = commands.append(mm.deserialize("<gray> | </gray>"));
-                                commands = commands.append(forceEndButton);
-                                commands = commands.append(mm.deserialize("<gray> | </gray>"));
-                                commands = commands.append(endButton);
-
-                                // Send to player
-                                player.sendMessage(fullPrefix);
-                                player.sendMessage(commands);
-
-                            }
-                        })
-                )
-
-                .withSubcommand(new CommandAPICommand("npc")
-                        .withArguments(new IntegerArgument("conversation_id"))
-                        .withArguments(new GreedyStringArgument("npc_name")
-                                .replaceSuggestions(ArgumentSuggestions.strings(info -> {
-                                    // Get all NPCs from Citizens and convert to array
-                                    List<String> npcNames = new ArrayList<>();
-                                    for (NPC citizenNPC : CitizensAPI.getNPCRegistry()) {
-                                        npcNames.add(citizenNPC.getName());
-                                    }
-                                    return npcNames.toArray(new String[0]);
-                                })))
-                        .executesPlayer((player, args) -> {
-                            int id = (int) args.get("conversation_id");
-                            String npcName = (String) args.get("npc_name");
-
-                            if (npcName == null || npcName.isEmpty()) {
-                                player.sendMessage(ChatColor.RED + "Invalid NPC name.");
-                                return;
-                            }
-
-                            // Verify conversation and NPC exist
-                            GroupConversation convo = conversationManager.getConversationById(id);
-                            if (convo == null || !convo.getNpcNames().contains(npcName)) {
-                                player.sendMessage(ChatColor.RED + "Invalid conversation or NPC not in this conversation.");
-                                return;
-                            }
-
-                            MiniMessage mm = MiniMessage.miniMessage();
-
-                            player.sendMessage("  ");
-                            // Build menu title
-                            Component title = mm.deserialize("<gold>==== NPC Controls: <yellow>" + npcName + "</yellow> ====</gold>");
-                            player.sendMessage(title);
-                            player.sendMessage("  ");
-
-                            // Menu options
-                            String escapedNPCName = npcName.replace("'", "\\'").replace("\"", "\\\"");
-                            player.sendMessage(mm.deserialize("<click:run_command:'/conv remove " + id + " " + escapedNPCName + "'><hover:show_text:'Remove this NPC from the conversation'><gray>[<red>Remove</red>]</gray></hover></click>")
-                                    .append(mm.deserialize("<gray> | </gray>"))
-                                    .append(mm.deserialize("<click:run_command:'/conv mute \" + id + \" \" + npcName + \"'><hover:show_text:'Toggle whether this NPC speaks'><gray>[<yellow>Mute</yellow>]</gray></hover></click>"))
-                                    .append(mm.deserialize("<gray> | </gray>"))
-                                    .append(mm.deserialize("<click:run_command:'/conv list'><hover:show_text:'Back to conversation list'><gray>[<green>Back</green>]</gray></hover></click>"))
-                            );
-                        })
-                )
-
-                .withSubcommand(new CommandAPICommand("mute")
-                        .withArguments(new IntegerArgument("conversation_id"))
-                        .withArguments(new StringArgument("npc_name"))
-                        .executesPlayer((player, args) -> {
-                            int id = (int) args.get("conversation_id");
-                            String npcName = (String) args.get("npc_name");
-
-                            // Verify conversation and NPC exist
-                            GroupConversation convo = conversationManager.getConversationById(id);
-                            if (convo == null || !convo.getNpcNames().contains(npcName)) {
-                                player.sendMessage(ChatColor.RED + "Invalid conversation or NPC not in this conversation.");
-                                return;
-                            }
-
-                            // Toggle mute status for the NPC in this conversation
-                            if (isNPCDisabled(npcName)) {
-                                enableNPCTalking(npcName);
-                                player.sendMessage(ChatColor.GREEN + npcName + " will now speak in the conversation.");
-                            } else {
-                                disableNPCTalking(npcName);
-                                player.sendMessage(ChatColor.GRAY + npcName + " has been muted in the conversation.");
-                            }
-                        })
-                )
-
-                // Remove NPC subcommand
-// Remove NPC subcommand
-                .withSubcommand(new CommandAPICommand("remove")
-                        .withArguments(new IntegerArgument("conversation_id"))
-                        .withArguments(new GreedyStringArgument("npc_name"))
-                        .executesPlayer((player, args) -> {
-                            int id = (int) args.get("conversation_id");
-                            String npcName = (String) args.get("npc_name");
-
-                            // Verify conversation and NPC exist
-                            GroupConversation convo = conversationManager.getConversationById(id);
-                            if (convo == null || !convo.getNpcNames().contains(npcName)) {
-                                player.sendMessage(ChatColor.RED + "Invalid conversation or NPC not in this conversation.");
-                                return;
-                            }
-
-                            // Get the NPC entity
-                            NPC npc = convo.getNPCByName(npcName);
-                            if (npc == null || !npc.isSpawned()) {
-                                player.sendMessage(ChatColor.RED + "NPC not found or not spawned.");
-                                return;
-                            }
-
-                            // Clean up all NPCs in the conversation
-                            for (NPC convoNpc : convo.getNPCs()) {
-                                conversationManager.cleanupNPCHologram(convoNpc);
-                            }
-
-                            // Remove NPC from conversation first
-                            convo.removeNPC(npc);
-
-                            // End conversation if no NPCs left
-                            if (convo.getNPCs().isEmpty()) {
-                                conversationManager.endConversation(convo);
-                                player.sendMessage(ChatColor.GRAY + "Conversation ended as there are no NPCs left.");
-                            } else {
-                                player.sendMessage(ChatColor.GRAY + "Removed " + npcName + " from the conversation.");
-                            }
-
-                            // Make the NPC walk away using the NPCManager
-                            if (npc.isSpawned()) {
-                                npcManager.makeNPCWalkAway(npc, convo);
-                                player.sendMessage(ChatColor.GREEN + npcName + " has been removed from the conversation and is walking away.");
-                            }
-                        })
-                )
-
-
-                .withSubcommand(new CommandAPICommand("endall")
-                        .executesPlayer((player, args) -> {
-                            conversationManager.StopAllConversations();
-                            player.sendMessage(ChatColor.GRAY + "All conversations ended.");
-                        })
-                )
-                // feed subcommand
-                .withSubcommand(new CommandAPICommand("feed")
-                        .withArguments(new IntegerArgument("conversation_id"))
-                        .withArguments(new GreedyStringArgument("message"))
-                        .executesPlayer((player, args) -> {
-                            int conversationId = (int) args.get("conversation_id");
-                            String message = (String) args.get("message");
-                            conversationManager.addSystemMessage(conversationManager.getConversationById(conversationId), message);
-                            player.sendMessage(ChatColor.GRAY + "Added system message: " + message);
-                        })
-                )
-
-                // Add this to your existing conv command chain
-                .withSubcommand(new CommandAPICommand("add")
-                        .withArguments(new IntegerArgument("conversation_id"))
-                        .withArguments(new TextArgument("npc_name")
-                                .replaceSuggestions(ArgumentSuggestions.strings(info -> {
-                                    // Get all NPCs from Citizens and convert to array with each name wrapped in quotes
-                                    List<String> npcNames = new ArrayList<>();
-                                    for (NPC citizenNPC : CitizensAPI.getNPCRegistry()) {
-                                        // Add quotes around each individual NPC name
-                                        npcNames.add("\"" + citizenNPC.getName() + "\"");
-                                    }
-                                    return npcNames.toArray(new String[0]);
-                                })))
-                        .withOptionalArguments(new GreedyStringArgument("greeting_message"))
-                        .executesPlayer((player, args) -> {
-                            int conversationId = (int) args.get("conversation_id");
-                            String npcName = (String) args.get("npc_name");
-                            String greetingMessage = args.get("greeting_message") != null ?
-                                    (String) args.get("greeting_message") : null;
-
-                            // Find the NPC by name instead of ID
-                            NPC npc = null;
-                            for (NPC citizenNPC : CitizensAPI.getNPCRegistry()) {
-                                if (citizenNPC.getName().equalsIgnoreCase(npcName)) {
-                                    npc = citizenNPC;
-                                    break;
-                                }
-                            }
-
-                            if (npc == null) {
-                                player.sendMessage(ChatColor.RED + "NPC '" + npcName + "' not found.");
-                                return;
-                            }
-
-                            // Rest of your existing code
-                            GroupConversation conversation = conversationManager.getConversationById(conversationId);
-                            if (conversation == null) {
-                                player.sendMessage(ChatColor.RED + "Conversation with ID " + conversationId + " not found.");
-                                return;
-                            }
-
-                            boolean success = conversationManager.addNPCToConversationWalk(npc, conversation, greetingMessage);
-                            if (success) {
-                                player.sendMessage(ChatColor.GRAY + "Added NPC " + npc.getName() + " to conversation #" + conversationId);
-                            } else {
-                                player.sendMessage(ChatColor.RED + "Failed to add NPC to conversation.");
-                            }
-                        }))
-
-
-                // command /conv fend <id>
-                .withSubcommand(new CommandAPICommand("fend")
-                        .withArguments(new IntegerArgument("conversation_id"))
-                        .executesPlayer((player, args) -> {
-                            int conversationId = (int) args.get("conversation_id");
-                            GroupConversation conversation = conversationManager.getConversationById(conversationId);
-
-                            if (conversation == null) {
-                                player.sendMessage(ChatColor.RED + "Conversation with ID " + conversationId + " not found.");
-                                return;
-                            }
-
-                            // End the conversation immediately without feeding
-                            conversationManager.endConversation(conversation);
-                            player.sendMessage(ChatColor.GRAY + "Force ended conversation with ID: " + conversationId);
-                        })
-                )
-                // command /conv end <id>
-                .withSubcommand(new CommandAPICommand("end")
-                        .withArguments(new IntegerArgument("conversation_id"))
-                        .executesPlayer((player, args) -> {
-                            int conversationId = (int) args.get("conversation_id");
-                            // find the conversation by id
-                            GroupConversation conversation = conversationManager.getConversationById(conversationId);
-
-                            // feed the conversation first, make them talk, only then end the conversation
-                            if (conversation == null) {
-                                player.sendMessage(ChatColor.RED + "Conversation with ID " + conversationId + " not found.");
-                                return;
-                            }
-
-                            conversationManager.addSystemMessage(conversation,
-                                    "Each NPC should now deliver a final line or action that reflects their current feelings and intentions. Let them exit the scene naturally — avoid stating that the conversation is ending."
-                            );
-
-                            conversationManager.generateGroupNPCResponses(conversation, null)
-                                    .thenRun(() -> {
-                                        conversationManager.endConversation(conversation);
-                                        player.sendMessage(ChatColor.GRAY + "Ended conversation with ID: " + conversationId);
-                                    });
-
-                            player.sendMessage(ChatColor.YELLOW + "Ending... conversation with ID: " + conversationId);
-                        })
-                ).register();
-
-
-
-
-
-
-
-
 
         if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) { //
             new StoryPlaceholderExpansion(this).register(); //
         }
 
         conversationManager = ConversationManager.getInstance(this);
-
 
         npcDataManager = NPCDataManager.getInstance(this);
 
@@ -999,6 +198,8 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
         npcManager = NPCManager.getInstance(this);
 
         scheduleManager = NPCScheduleManager.getInstance(this);
+
+        commandManager.registerCommands();
 
         startProximityTask(this);
 
@@ -1040,6 +241,27 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
 
     public int getResponseDelay() {
         return responseDelay;
+    }
+
+    // toggle chat for player (disabledPlayer)
+    public void toggleChatForPlayer(Player executor, Player target) {
+        final String targetName;
+        if (target == null) {
+            targetName = executor.getName();
+        } else {
+            targetName = target.getName();
+        }
+
+        if (disabledPlayers.contains(targetName)) {
+            disabledPlayers.remove(targetName);
+            if (executor != null)
+                executor.sendMessage(ChatColor.GREEN + "Chat with NPCs enabled.");
+        } else {
+            disabledPlayers.add(targetName);
+            if (executor != null)
+                executor.sendMessage(ChatColor.RED + "Chat with NPCs disabled.");
+        }
+        saveDataFiles();
     }
 
     public void disableNPCTalking(String npcName) {
@@ -1171,13 +393,14 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
     @Override
     public void onDisable() {
         // Plugin shutdown logic
-        getLogger().info("AIStorymaker has been disableds.");
+        getLogger().info("Story has been disabled.");
         CommandAPI.onDisable();
         if (scheduleManager != null) {
             scheduleManager.shutdown();
         }
 
         saveTeamsAndQuests();
+        commandManager.onDisable();
     }
 
     private void saveTeamsAndQuests() {
@@ -1831,7 +1054,7 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
 
                     // Add the player's message to the conversation
                     if (conversationManager.hasActiveConversation(player)) {
-                        conversationManager.addPlayerMessage(player, message, chatEnabled);
+                        conversationManager.addPlayerMessage(player, message, existingConvo.chatEnabled);
                     }
 
                     joinedExistingConversation = true;
@@ -1849,7 +1072,9 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
 
                     // If player now has an active conversation, add the message
                     if (conversationManager.hasActiveConversation(player)) {
-                        conversationManager.addPlayerMessage(player, message, chatEnabled);
+                        // get conversation
+                        GroupConversation existingConvo = conversationManager.getActiveConversation(player);
+                        conversationManager.addPlayerMessage(player, message, existingConvo.chatEnabled);
 
                     }
                 }
@@ -2060,7 +1285,16 @@ public final class Story extends JavaPlugin implements Listener, CommandExecutor
 
                 // Check for admin permission to bypass distance check
                 if (p.hasPermission("storymaker.npc.hearglobal")) {
-                    shouldSee = true;
+                    // check if player has any spying convos (only show that convo then)
+                    if (playerSpyingConversation.containsKey(p.getUniqueId())) {
+                        Integer spyingConvoId = playerSpyingConversation.get(p.getUniqueId());
+                        if (spyingConvoId != null) {
+                            GroupConversation conversation = conversationManager.getConversationById(spyingConvoId);
+                            shouldSee = conversation.getNPCByName(finalCurrentNpcName) != null;
+                        }
+                    } else {
+                        shouldSee = true;
+                    }
                 }
                 // Check distance if we have a valid NPC location
                 else if (npcLocation != null) {

@@ -1,4 +1,4 @@
-package com.canefe.story.npc
+package com.canefe.story.npc.data
 
 import com.canefe.story.StoryLocation
 import com.canefe.story.conversation.ConversationMessage
