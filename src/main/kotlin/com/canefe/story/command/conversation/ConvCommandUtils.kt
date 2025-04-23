@@ -30,24 +30,24 @@ class ConvCommandUtils {
 		return conversation
 	}
 
+	// Return the list of conversation IDs
+	fun getConversationIDs(): List<Int> =
+		conversationManager
+			.getAllActiveConversations()
+			.map { it.id }
+
 	fun createButton(
 		label: String,
 		color: String,
 		clickAction: String,
 		command: String,
 		hoverText: String,
-	): Component {
-		return CommandComponentUtils.createButton(mm, label, color, clickAction, command, hoverText)
-	}
+	): Component = CommandComponentUtils.createButton(mm, label, color, clickAction, command, hoverText)
 
 	fun combineComponentsWithSeparator(
 		components: List<Component>,
 		separatorText: String,
-	): Component {
-		return CommandComponentUtils.combineComponentsWithSeparator(mm, components, separatorText)
-	}
+	): Component = CommandComponentUtils.combineComponentsWithSeparator(mm, components, separatorText)
 
-	fun escapeForCommand(text: String): String {
-		return CommandComponentUtils.escapeForCommand(text)
-	}
+	fun escapeForCommand(text: String): String = CommandComponentUtils.escapeForCommand(text)
 }

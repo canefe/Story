@@ -3,15 +3,22 @@ package com.canefe.story.npc
 import com.canefe.story.Story
 import com.canefe.story.location.data.StoryLocation
 import net.citizensnpcs.api.npc.NPC
+import net.citizensnpcs.trait.EntityPoseTrait
+import org.bukkit.Bukkit
+import org.bukkit.Location
 import org.bukkit.configuration.file.YamlConfiguration
-import org.bukkit.entity.Entity
+import org.bukkit.event.player.PlayerTeleportEvent
 import org.bukkit.scheduler.BukkitRunnable
 import org.bukkit.scheduler.BukkitTask
 import java.io.File
 import java.io.IOException
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.collections.ArrayList
 
-class NPCScheduleManager private constructor(private val plugin: Story) {
+class NPCScheduleManager private constructor(
+	private val plugin: Story,
+) {
 	val schedules = ConcurrentHashMap<String, NPCSchedule>()
 	private val scheduleFolder: File =
 		File(plugin.dataFolder, "schedules").apply {
@@ -20,6 +27,8 @@ class NPCScheduleManager private constructor(private val plugin: Story) {
 			}
 		}
 	private var scheduleTask: BukkitTask? = null
+
+	private val npcMovementQueue = LinkedList<NPC>()
 
 	init {
 		loadAllSchedules()
@@ -117,9 +126,7 @@ class NPCScheduleManager private constructor(private val plugin: Story) {
 		return schedule
 	}
 
-	fun getSchedule(npcName: String): NPCSchedule? {
-		return schedules[npcName.lowercase()]
-	}
+	fun getSchedule(npcName: String): NPCSchedule? = schedules[npcName.lowercase()]
 
 	private fun startScheduleRunner() {
 		// Stop any existing task
@@ -135,17 +142,214 @@ class NPCScheduleManager private constructor(private val plugin: Story) {
 					}
 
 					val gameTime = plugin.server.worlds[0].time
+
 					// Convert to 24-hour format (0-23)
 					val hour = ((gameTime / 1000 + 6) % 24).toInt() // +6 because MC day starts at 6am
 
-					for (schedule in schedules.values) {
-						val currentEntry = schedule.getEntryForTime(hour)
-						if (currentEntry != null) {
-							executeScheduleEntry(schedule.npcName, currentEntry)
+					// Handle NPCs with schedules
+					if (plugin.config.scheduleEnabled) {
+						for (schedule in schedules.values) {
+							val currentEntry = schedule.getEntryForTime(hour)
+							if (currentEntry != null) {
+								executeScheduleEntry(schedule.npcName, currentEntry)
+							}
+						}
+					}
+
+// Handle NPCs without schedules or with empty location entries
+					if (plugin.config.randomPathingEnabled) {
+						// Pre-filter NPCs that are candidates for random movement
+						val candidateNPCs =
+							plugin.npcDataManager
+								.getAllNPCNames()
+								.asSequence()
+								.filter { npcName ->
+									val npc = plugin.npcDataManager.getNPC(npcName) ?: return@filter false
+									if (!npc.isSpawned) return@filter false
+
+									// Check schedule status
+									val hasSchedule = schedules.containsKey(npcName.lowercase())
+									val hasLocationForCurrentTime =
+										hasSchedule &&
+											schedules[npcName.lowercase()]?.getEntryForTime(hour)?.locationName?.isNotEmpty() == true
+
+									!hasSchedule || !hasLocationForCurrentTime
+								}.mapNotNull { plugin.npcDataManager.getNPC(it) }
+								.toList()
+
+						// Only process candidates that have a chance of moving
+						if (candidateNPCs.isNotEmpty()) {
+							val randomChance = plugin.config.randomPathingChance
+
+							// Using ThreadLocalRandom instead of Math.random() for better performance
+							val random =
+								java.util.concurrent.ThreadLocalRandom
+									.current()
+
+							if (plugin.config.randomPathingEnabled) {
+								// Find candidate NPCs as before
+
+								// Add eligible NPCs to the queue
+								for (npc in candidateNPCs) {
+									if (random.nextDouble() < randomChance && hasNearbyPlayers(npc)) {
+										npcMovementQueue.add(npc)
+									}
+								}
+
+								// Process a few NPCs from the queue
+								val maxProcessPerTick = 3
+								for (i in 0 until maxProcessPerTick) {
+									if (npcMovementQueue.isEmpty()) break
+									val nextNPC = npcMovementQueue.poll()
+									moveNPCToRandomSublocation(nextNPC)
+								}
+							}
 						}
 					}
 				}
-			}.runTaskTimer(plugin, 20L, 1200L) // Check every minute
+			}.runTaskTimer(plugin, 20L, plugin.config.scheduleTaskPeriod * 20L) // Check every minute
+	}
+
+	private fun hasNearbyPlayers(npc: NPC): Boolean {
+		val radius = plugin.config.rangeBeforeTeleport * 2
+		val nearbyPlayers = plugin.getNearbyPlayers(npc, radius, ignoreY = true)
+		return nearbyPlayers.isNotEmpty()
+	}
+
+	private fun moveNPCToRandomSublocation(npc: NPC) {
+		// Early returns for invalid conditions
+		val currentLocation = npc.entity?.location ?: return
+		if (plugin.conversationManager.isInConversation(npc)) return // Don't move NPCs in conversation
+
+		// Get story location and potential sublocations more efficiently
+		val currentStoryLocation = plugin.locationManager.getLocationByPosition(currentLocation)
+
+		// Get candidate sublocations (using more direct calls)
+		val allSublocations =
+			when {
+				currentStoryLocation?.hasParent() == true ->
+					plugin.locationManager.getSublocations(currentStoryLocation.parentLocationName!!)
+				currentStoryLocation != null ->
+					plugin.locationManager.getSublocations(currentStoryLocation.name)
+				else ->
+					plugin.locationManager.getAllLocations().filter { it.isSubLocation }
+			}
+
+		// Check if we have any sublocations before filtering
+		if (allSublocations.isEmpty()) return
+
+		// Filter eligible sublocations (optimized to a single pass)
+		val eligibleLocations =
+			allSublocations.filter {
+				it.bukkitLocation != null &&
+					(it.allowedNPCs.isEmpty() || it.allowedNPCs.contains(npc.name))
+			}
+
+		if (eligibleLocations.isEmpty()) return
+
+		// Use ThreadLocalRandom for better performance in concurrent environments
+		val randomIndex =
+			java.util.concurrent.ThreadLocalRandom
+				.current()
+				.nextInt(eligibleLocations.size)
+		val randomSublocation = eligibleLocations[randomIndex]
+
+// Only clone the bukkit location when we're about to modify it
+		val baseLocation = randomSublocation.bukkitLocation!! // Safe because we filtered nulls
+		val randomOffsetX =
+			java.util.concurrent.ThreadLocalRandom
+				.current()
+				.nextDouble(-3.0, 3.0)
+		val randomOffsetZ =
+			java.util.concurrent.ThreadLocalRandom
+				.current()
+				.nextDouble(-3.0, 3.0)
+
+// Create the target location with random offsets
+		val targetLocation =
+			Location(
+				baseLocation.world,
+				baseLocation.x + randomOffsetX,
+				baseLocation.y, // Initial Y, will be adjusted if needed
+				baseLocation.z + randomOffsetZ,
+				baseLocation.yaw,
+				baseLocation.pitch,
+			)
+
+// Find safe ground within 2 blocks up or down
+		val safeLocation = findNearbyGround(targetLocation, maxBlocksCheck = 2)
+		if (safeLocation != null) {
+			// Move the NPC to the safe location
+			moveNPCToLocation(npc, safeLocation)
+			plugin.logger.info("Moving ${npc.name} to random sublocation: ${randomSublocation.name}")
+		} else {
+			// If no safe location found, use the original sublocation
+			plugin.logger.info("No safe ground found near random position, using base location for ${npc.name}")
+			moveNPCToLocation(npc, baseLocation)
+		}
+	}
+
+	/**
+	 * Finds a safe ground position for an NPC to stand on within a limited vertical range
+	 * @param location The initial location to check
+	 * @param maxBlocksCheck Maximum blocks to check up and down (default: 2)
+	 * @return A safe location or null if none found
+	 */
+	private fun findNearbyGround(
+		location: Location,
+		maxBlocksCheck: Int = 2,
+	): Location? {
+		val world = location.world
+		val x = location.x
+		val z = location.z
+		val startY = location.y.toInt()
+
+		// First check the exact position
+		val exactBlock = world.getBlockAt(x.toInt(), startY - 1, z.toInt())
+		val blockAtFeet = world.getBlockAt(x.toInt(), startY, z.toInt())
+		val blockAtHead = world.getBlockAt(x.toInt(), startY + 1, z.toInt())
+
+		// If current position is already valid (solid ground below, space for NPC)
+		if (exactBlock.type.isSolid && !blockAtFeet.type.isSolid && !blockAtHead.type.isSolid) {
+			return location.clone()
+		}
+
+		// Check downward first (more likely to find ground below)
+		for (yOffset in 1..maxBlocksCheck) {
+			val y = startY - yOffset
+
+			// Don't check below world
+			if (y <= 0) continue
+
+			val block = world.getBlockAt(x.toInt(), y - 1, z.toInt())
+			val blockAbove = world.getBlockAt(x.toInt(), y, z.toInt())
+			val blockAboveTwo = world.getBlockAt(x.toInt(), y + 1, z.toInt())
+
+			// Check if the block is solid with 2 air blocks above (space for NPC)
+			if (block.type.isSolid && !blockAbove.type.isSolid && !blockAboveTwo.type.isSolid) {
+				return Location(world, x, y.toDouble(), z, location.yaw, location.pitch)
+			}
+		}
+
+		// Then check upward
+		for (yOffset in 1..maxBlocksCheck) {
+			val y = startY + yOffset
+
+			// Don't check above world height
+			if (y >= world.maxHeight - 1) continue
+
+			val block = world.getBlockAt(x.toInt(), y - 1, z.toInt())
+			val blockAbove = world.getBlockAt(x.toInt(), y, z.toInt())
+			val blockAboveTwo = world.getBlockAt(x.toInt(), y + 1, z.toInt())
+
+			// Check if the block is solid with 2 air blocks above (space for NPC)
+			if (block.type.isSolid && !blockAbove.type.isSolid && !blockAboveTwo.type.isSolid) {
+				return Location(world, x, y.toDouble(), z, location.yaw, location.pitch)
+			}
+		}
+
+		// No safe location found
+		return null
 	}
 
 	private fun executeScheduleEntry(
@@ -155,25 +359,87 @@ class NPCScheduleManager private constructor(private val plugin: Story) {
 		// Get NPC entity through your NPC system
 		val npc = plugin.npcDataManager.getNPC(npcName) ?: return
 		val npcEntity = npc.entity ?: return
-
 		// Handle location movement
 		val locationName = entry.locationName
-		if (locationName != null) {
+		if (!locationName.isNullOrEmpty()) {
 			val location = plugin.locationManager.getLocation(locationName)
 			if (location != null) {
-				// Use your existing NPC movement system or teleport
-				moveNPCToLocation(npc, location)
+				// Check if currently in conversation.
+				val isInConversation = plugin.conversationManager.isInConversation(npc)
+
+				// Check if the NPC needs to move
+				val shouldMove =
+					location.bukkitLocation?.let {
+						npcEntity.location.distance(it) >= plugin.config.radiantRadius
+					} ?: false
+
+				if (shouldMove) {
+					// if the entry.type is Work, make NPC say goodbye (unless they are already in the location)
+					if (entry.action == "work" && isInConversation) {
+						val goodbyeContext =
+							mutableListOf(
+								"\"You have a work to do at ${location.name}. Tell the people in the conversation that you are leaving.\"",
+							)
+						plugin.conversationManager.endConversationWithGoodbye(npc, goodbyeContext)
+					}
+
+					// Use your existing NPC movement system or teleport
+					moveNPCToLocation(npc, location)
+				} else {
+					plugin.logger.info("${npc.name} is already at ${location.name}, skipping movement.")
+				}
 			}
 		}
 
 		// Handle action
 		if (entry.action != null) {
-			executeAction(npcEntity, entry.action)
+			executeAction(npc, entry.action)
 		}
 
 		// Handle dialogue (announcement)
 		if (entry.dialogue != null) {
-			plugin.npcMessageService.broadcastNPCMessage(entry.dialogue, npc)
+			// add some random delay from 1 to 4 seconds
+			val randomDelay = (1..4).random() * 20L // Convert to ticks
+			Bukkit.getScheduler().runTaskLater(
+				plugin,
+				Runnable {
+					plugin.npcMessageService.broadcastNPCMessage(entry.dialogue, npc)
+				},
+				randomDelay,
+			)
+		}
+	}
+
+	private fun moveNPCToLocation(
+		npc: NPC,
+		location: Location,
+	) {
+		val range =
+			plugin.config.rangeBeforeTeleport // Distance before teleporting
+		// Check if the NPC is spawned
+		if (!npc.isSpawned) {
+			plugin.logger.warning("NPC ${npc.name} is not spawned, cannot move.")
+			return
+		}
+		// Check if spawned and check if there is any online players in 200 blocks
+		val nearbyPlayers = plugin.getNearbyPlayers(npc, range, ignoreY = true)
+		val shouldTeleport =
+			nearbyPlayers.isEmpty() // If no players are nearby, teleport the NPC to the location
+
+		// Check if the target location and the NPC's current location are in the same world
+		if (npc.entity.location.world != location.world) {
+			plugin.logger.warning("NPC ${npc.name} is in a different world, cannot move.")
+			return
+		}
+
+		if (shouldTeleport) {
+			npc.teleport(location, PlayerTeleportEvent.TeleportCause.PLUGIN)
+			plugin.logger.info("Teleporting NPC ${npc.name} to $location")
+			return
+		} else {
+			// If there are players nearby, walk to the location
+			plugin.logger.info("Walking NPC ${npc.name} to $location")
+			plugin.npcManager.walkToLocation(npc, location, 0.1, 1f, 30, null, null)
 		}
 	}
 
@@ -181,33 +447,38 @@ class NPCScheduleManager private constructor(private val plugin: Story) {
 		npc: NPC,
 		location: StoryLocation,
 	) {
-		// Implement movement - this will depend on your NPC system
+		// reset pose
+		npc.getOrAddTrait(EntityPoseTrait::class.java).pose = EntityPoseTrait.EntityPose.STANDING
+
 		val bukkitLocation = location.bukkitLocation
 		if (bukkitLocation == null) {
 			plugin.logger.warning("No Bukkit location found for ${location.name}")
 			return
 		}
-		plugin.logger.info("Moving NPC to $bukkitLocation")
-		plugin.npcManager.walkToLocation(npc, bukkitLocation, 0.1, 1f, 30, null, null)
+		moveNPCToLocation(npc, bukkitLocation)
 	}
 
 	private fun executeAction(
-		npc: Entity,
+		npc: NPC,
 		action: String,
 	) {
 		// Implement actions like sitting, working, etc.
 		when (action.lowercase()) {
 			"sit" -> {
 				// Make NPC sit
+				npc.getOrAddTrait(EntityPoseTrait::class.java).pose = EntityPoseTrait.EntityPose.SITTING
 			}
 			"work" -> {
 				// Make NPC perform work animation
+				npc.getOrAddTrait(EntityPoseTrait::class.java).pose = EntityPoseTrait.EntityPose.STANDING
 			}
 			"sleep" -> {
 				// Make NPC sleep
+				npc.getOrAddTrait(EntityPoseTrait::class.java).pose = EntityPoseTrait.EntityPose.SLEEPING
 			}
 			"idle" -> {
 				// Default idle behavior
+				npc.getOrAddTrait(EntityPoseTrait::class.java).pose = EntityPoseTrait.EntityPose.STANDING
 			}
 			else -> {
 				plugin.logger.warning("Unknown action: $action for NPC: ${npc.name}")
@@ -219,7 +490,9 @@ class NPCScheduleManager private constructor(private val plugin: Story) {
 		scheduleTask?.cancel()
 	}
 
-	class NPCSchedule(val npcName: String) {
+	class NPCSchedule(
+		val npcName: String,
+	) {
 		val entries: MutableList<ScheduleEntry> = ArrayList()
 
 		fun addEntry(entry: ScheduleEntry) {
@@ -266,8 +539,6 @@ class NPCScheduleManager private constructor(private val plugin: Story) {
 		private var instance: NPCScheduleManager? = null
 
 		@JvmStatic
-		fun getInstance(plugin: Story): NPCScheduleManager {
-			return instance ?: NPCScheduleManager(plugin).also { instance = it }
-		}
+		fun getInstance(plugin: Story): NPCScheduleManager = instance ?: NPCScheduleManager(plugin).also { instance = it }
 	}
 }

@@ -22,7 +22,9 @@ import java.io.File
 import java.util.*
 import java.util.concurrent.TimeUnit
 
-class NPCManager private constructor(private val plugin: Story) : Listener {
+class NPCManager private constructor(
+	private val plugin: Story,
+) : Listener {
 	// NPC cooldowns mapping (NPC UUID to timestamp)
 	private val npcCooldowns = HashMap<UUID, Long>()
 
@@ -80,9 +82,7 @@ class NPCManager private constructor(private val plugin: Story) : Listener {
 	/**
 	 * Check if NPC is disabled
 	 */
-	fun isNPCDisabled(npc: NPC): Boolean {
-		return disabledNPCs.contains(npc.id)
-	}
+	fun isNPCDisabled(npc: NPC): Boolean = disabledNPCs.contains(npc.id)
 
 	/**
 	 * Toggle NPC enabled/disabled status
@@ -192,6 +192,7 @@ class NPCManager private constructor(private val plugin: Story) : Listener {
 
 				if (isNearTarget(initiator, target.entity.location)) {
 					Bukkit.getScheduler().cancelTask(taskId)
+					navigator.cancelNavigation()
 
 					// Have the initiator face the target
 					makeNPCFaceLocation(initiator, target.entity.location)
@@ -286,18 +287,104 @@ class NPCManager private constructor(private val plugin: Story) : Listener {
 		}
 
 		val npcLocation = npc.entity.location
-		val totalDistance = npcLocation.distance(targetLocation)
+		// check if it is in the same world
+		if (npcLocation.world != targetLocation.world) {
+			onFailed?.run()
+			return -1
+		}
+		val totalDistance = npcLocation.distanceSquared(targetLocation)
 
-		// Direct walk for now (waypoint system commented out in original)
-		return directWalkToLocation(
-			npc,
-			targetLocation,
-			distanceMargin,
-			speedModifier,
-			timeout,
-			onArrival,
-			onFailed,
-		)
+		// If total distance larger than 75, use waypoints
+		if (totalDistance > 75 * 75) { // Using distanceSquared, so compare with square of 75
+			// Generate waypoints between current location and target
+			val waypoints = generateWaypoints(npcLocation, targetLocation)
+
+			// Start waypoint navigation
+			return walkToWaypoints(
+				npc,
+				waypoints,
+				0, // Start with first waypoint
+				distanceMargin,
+				speedModifier,
+				100f, // Max pathfinding range
+				timeout,
+				onArrival,
+				onFailed,
+			)
+		} else {
+			// For shorter distances, use direct navigation
+			return directWalkToLocation(
+				npc,
+				targetLocation,
+				distanceMargin,
+				speedModifier,
+				timeout,
+				onArrival,
+				onFailed,
+			)
+		}
+	}
+
+	/**
+	 * Generates a series of waypoints between two locations
+	 * @param start Starting location
+	 * @param end Target location
+	 * @return List of waypoints including start and end points
+	 */
+	private fun generateWaypoints(
+		start: Location,
+		end: Location,
+	): List<Location> {
+		val waypoints = mutableListOf<Location>()
+
+		// Always include start point
+		waypoints.add(start.clone())
+
+		// Get total distance
+		val distance = start.distance(end)
+
+		// Calculate number of waypoints (1 waypoint per 50 blocks, minimum 2)
+		val segments = maxOf(2, (distance / 50).toInt())
+
+		// Create waypoints at regular intervals
+		for (i in 1 until segments) {
+			val fraction = i.toDouble() / segments
+			val x = start.x + (end.x - start.x) * fraction
+			val y = start.y + (end.y - start.y) * fraction
+			val z = start.z + (end.z - start.z) * fraction
+
+			val waypoint = Location(start.world, x, y, z)
+
+			// Ensure waypoint is safe for navigation
+			adjustWaypointHeight(waypoint)
+
+			waypoints.add(waypoint)
+		}
+
+		// Always include end point
+		waypoints.add(end.clone())
+
+		return waypoints
+	}
+
+	/**
+	 * Adjusts the height of a waypoint to ensure it's on solid ground
+	 */
+	private fun adjustWaypointHeight(waypoint: Location) {
+		val world = waypoint.world ?: return
+
+		// Check if the waypoint is in a solid block, move up if needed
+		var y = waypoint.y.toInt()
+		while (y < world.maxHeight && !world.getBlockAt(waypoint.blockX, y, waypoint.blockZ).isPassable) {
+			y++
+		}
+
+		// Check if there's air beneath, move down if needed
+		while (y > 1 && world.getBlockAt(waypoint.blockX, y - 1, waypoint.blockZ).isPassable) {
+			y--
+		}
+
+		waypoint.y = y.toDouble()
 	}
 
 	/**
@@ -360,10 +447,15 @@ class NPCManager private constructor(private val plugin: Story) : Listener {
 				} else {
 					// Proceed to next waypoint
 					walkToWaypoints(
-						npc, waypoints, currentIndex + 1,
-						distanceMargin, speedModifier,
-						maxPathfindingRange, timeout,
-						onArrival, onFailed,
+						npc,
+						waypoints,
+						currentIndex + 1,
+						distanceMargin,
+						speedModifier,
+						maxPathfindingRange,
+						timeout,
+						onArrival,
+						onFailed,
 					)
 				}
 			},
@@ -420,6 +512,13 @@ class NPCManager private constructor(private val plugin: Story) : Listener {
 				if (!npc.isSpawned) {
 					Bukkit.getScheduler().cancelTask(taskIdHolder[0])
 					onFailed?.run()
+					return@scheduleSyncRepeatingTask
+				}
+
+				// Check if NPC is in a conversation
+				if (plugin.conversationManager.isInConversation(npc)) {
+					Bukkit.getScheduler().cancelTask(taskIdHolder[0])
+					navigator.cancelNavigation()
 					return@scheduleSyncRepeatingTask
 				}
 

@@ -32,7 +32,9 @@ import java.util.regex.Pattern
 /**
  * Handles integration between MythicMobs and the conversation system
  */
-class MythicMobConversationIntegration(private val plugin: Story) : Listener {
+class MythicMobConversationIntegration(
+	private val plugin: Story,
+) : Listener {
 	private val mythicMobsHandler = MythicMobsHandler(plugin)
 	private val adapterRegistry = mutableMapOf<UUID, MythicMobNPCAdapter>()
 
@@ -43,9 +45,7 @@ class MythicMobConversationIntegration(private val plugin: Story) : Listener {
 	/**
 	 * Checks if an entity is a MythicMob that can participate in conversations
 	 */
-	fun isMythicMobNPC(entity: Entity): Boolean {
-		return mythicMobsHandler.isMythicMob(entity)
-	}
+	fun isMythicMobNPC(entity: Entity): Boolean = mythicMobsHandler.isMythicMob(entity)
 
 	fun endConversation(npc: NPC) {
 		if (npc is MythicMobNPCAdapter) {
@@ -84,6 +84,10 @@ class MythicMobConversationIntegration(private val plugin: Story) : Listener {
 	 */
 	@EventHandler
 	fun onPlayerInteractEntity(event: PlayerInteractEntityEvent) {
+		if (!plugin.config.mythicMobsEnabled) {
+			return // Skip if MythicMobs integration is disabled
+		}
+
 		if (event.hand != EquipmentSlot.HAND) {
 			return // Ignore off-hand interactions
 		}
@@ -117,6 +121,10 @@ class MythicMobConversationIntegration(private val plugin: Story) : Listener {
 	 */
 	@EventHandler
 	fun onPlayerChat(event: AsyncChatEvent) {
+		if (!plugin.config.mythicMobsEnabled) {
+			return // Skip if MythicMobs integration is disabled
+		}
+
 		val player = event.player
 		val message = PlainTextComponentSerializer.plainText().serialize(event.message())
 
@@ -438,17 +446,15 @@ class MythicMobConversationIntegration(private val plugin: Story) : Listener {
 			return null
 		}
 
-		override fun <T : Trait> getTraitNullable(trait: Class<T>): T? {
-			return getTrait(trait)
-		}
+		override fun <T : Trait> getTraitNullable(trait: Class<T>): T? = getTrait(trait)
 
 		override fun getTraits(): MutableIterable<Trait> {
 			TODO("Not yet implemented")
 		}
 
 		@Suppress("UNCHECKED_CAST")
-		override fun <T : Trait> getOrAddTrait(trait: Class<T>): T {
-			return getTrait(trait) ?: when {
+		override fun <T : Trait> getOrAddTrait(trait: Class<T>): T =
+			getTrait(trait) ?: when {
 				trait.name == "net.citizensnpcs.api.trait.trait.RotationTrait" -> {
 					val rotTrait = RotationTrait() as T
 					traits[trait as Class<out Trait>] = rotTrait
@@ -456,11 +462,9 @@ class MythicMobConversationIntegration(private val plugin: Story) : Listener {
 				}
 				else -> throw UnsupportedOperationException("Cannot add trait $trait to MythicMob")
 			}
-		}
 
-		override fun hasTrait(trait: Class<out Trait>): Boolean {
-			return trait.name == "net.citizensnpcs.api.trait.trait.RotationTrait" || traits.containsKey(trait)
-		}
+		override fun hasTrait(trait: Class<out Trait>): Boolean =
+			trait.name == "net.citizensnpcs.api.trait.trait.RotationTrait" || traits.containsKey(trait)
 
 		// Set conversation for tracking
 		fun setConversation(conversation: Conversation?) {
@@ -469,9 +473,8 @@ class MythicMobConversationIntegration(private val plugin: Story) : Listener {
 
 		override fun getOwningRegistry() = CitizensAPI.getNPCRegistry()
 
-		override fun getNavigator(): Navigator {
+		override fun getNavigator(): Navigator =
 			throw UnsupportedOperationException("Navigator not implemented for MythicMobs")
-		}
 
 		override fun removeTrait(trait: Class<out Trait>) {
 			traits.remove(trait)

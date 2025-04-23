@@ -6,19 +6,18 @@ import com.canefe.story.util.Msg.sendSuccess
 import dev.jorel.commandapi.CommandAPICommand
 import dev.jorel.commandapi.arguments.GreedyStringArgument
 import dev.jorel.commandapi.arguments.IntegerArgument
-import dev.jorel.commandapi.arguments.StringArgument
+import dev.jorel.commandapi.arguments.TextArgument
 import dev.jorel.commandapi.executors.CommandExecutor
 import dev.jorel.commandapi.executors.PlayerCommandExecutor
 
 class ScheduleCommand(
 	private val commandUtils: ScheduleCommandUtils,
 ) {
-	fun getCommand(): CommandAPICommand {
-		return CommandAPICommand("schedule")
+	fun getCommand(): CommandAPICommand =
+		CommandAPICommand("schedule")
 			.withPermission("story.location")
 			.withSubcommand(getCreateScheduleCommand())
 			.withSubcommand(getSetScheduleCommand())
-	}
 
 	private fun getCreateScheduleCommand(): CommandAPICommand {
 		return CommandAPICommand("create")
@@ -52,20 +51,19 @@ class ScheduleCommand(
 						}
 						builder.buildFuture()
 					},
-			)
-			.withArguments(
-				StringArgument("location_name").replaceSuggestions { info, builder ->
+			).withArguments(
+				TextArgument("location_name").replaceSuggestions { info, builder ->
 					val locations = commandUtils.locationManager.getAllLocations()
 					val suggestions =
-						locations.map { it.name }
+						locations
+							.map { it.name }
 							.distinct()
 					suggestions.forEach {
-						builder.suggest(it)
+						builder.suggest("\"${it}\"")
 					}
 					builder.buildFuture()
 				},
-			)
-			.withArguments(
+			).withArguments(
 				GreedyStringArgument("npc_name").replaceSuggestions { info, builder ->
 					val schedules = commandUtils.scheduleManager.schedules
 					val suggestions =
@@ -76,8 +74,7 @@ class ScheduleCommand(
 					}
 					builder.buildFuture()
 				},
-			)
-			.executesPlayer(
+			).executesPlayer(
 				PlayerCommandExecutor { player, args ->
 					val npcName = args.get("npc_name") as String
 					val locationName = args.get("location_name") as String

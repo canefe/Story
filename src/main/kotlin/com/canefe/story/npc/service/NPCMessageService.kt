@@ -1,6 +1,8 @@
 package com.canefe.story.npc.service
 
 import com.canefe.story.Story
+import com.canefe.story.conversation.ConversationMessage
+import com.canefe.story.npc.data.NPCContext
 import dev.lone.itemsadder.api.FontImages.FontImageWrapper
 import net.citizensnpcs.api.npc.NPC
 import net.kyori.adventure.text.Component
@@ -8,14 +10,48 @@ import net.kyori.adventure.text.minimessage.MiniMessage
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
 import org.bukkit.Bukkit
 import java.util.*
+import java.util.concurrent.CompletableFuture
 import java.util.regex.Pattern
 
-class NPCMessageService(private val plugin: Story) {
+class NPCMessageService(
+	private val plugin: Story,
+) {
+	// Cache already gender-checked NPCs
+	private val genderCache: MutableMap<String, String> = mutableMapOf()
+
+	// Last played sound (to change the sound if the same NPC speaks again)
+	private val lastPlayedSound: MutableMap<String, String> = mutableMapOf()
+
+	fun load() {
+		// Reset the cache
+		genderCache.clear()
+	}
+
 	fun broadcastNPCMessage(
 		message: String,
 		npc: NPC,
 		color: String? = null,
+		npcContext: NPCContext? = null,
 	) {
+		// First check if we already have the gender cached
+		val cachedGender = genderCache[npc.name]
+
+		// Use the cached gender if available, or start determining gender
+		val genderFuture =
+			if (cachedGender != null) {
+				CompletableFuture.completedFuture(cachedGender)
+			} else {
+				determineNPCGenderAsync(npc.name)
+					.thenApply { gender ->
+						// Cache the result for future use
+						genderCache[npc.name] = gender
+						gender
+					}.exceptionally { e ->
+						plugin.logger.warning("Error determining gender for NPC ${npc.name}: ${e.message}")
+						"man" // Default fallback on error
+					}
+			}
+
 		val mm = MiniMessage.miniMessage()
 		val maxLineWidth = 40 // Adjust based on desired character limit per line
 		val padding = "             " // Space padding to align text with the image
@@ -53,7 +89,10 @@ class NPCMessageService(private val plugin: Story) {
 			val wrappedLines = wrapTextWithFormatting(formattedMessage, maxLineWidth)
 			parsedMessages.add(mm.deserialize(padding)) // Empty line for spacing
 
-			val avatar = plugin.npcContextGenerator.getOrCreateContextForNPC(npcName)?.avatar
+			// get the context if not provided
+			val context = npcContext ?: plugin.npcContextGenerator.getOrCreateContextForNPC(npcName)
+
+			val avatar = context?.avatar
 
 			// Get avatar as a string with legacy formatting
 			val rawAvatar =
@@ -94,23 +133,58 @@ class NPCMessageService(private val plugin: Story) {
 			Runnable {
 				// Only send message to players who are nearby OR have permission
 				val npcLocation = npc.entity?.location ?: return@Runnable
+				val disabledHearing = plugin.playerManager.disabledHearing
 
+				var playersCount = 0
 				// Determine which players can see the message
 				for (p in Bukkit.getOnlinePlayers()) {
+					// Check if the player is in the same world and within the radius
+					var inRange =
+						p.world == npcLocation.world &&
+							p.location.distance(npcLocation) <= plugin.config.radiantRadius
+
+					// Check if the player has permission to see the message or in range
 					var shouldSee =
-						p.hasPermission("storymaker.npc.hearglobal") ||
-							(
-								p.world == npcLocation.world &&
-									p.location.distance(npcLocation) <= plugin.config.chatRadius
-							)
+						(p.hasPermission("story.conversation.hearglobal") && !disabledHearing.contains(p.uniqueId)) || inRange
+
+					// Check if the admin is spying only one conversation
 					plugin.playerManager.getSpyingConversation(p)?.let { conversation ->
 						shouldSee = conversation.hasNPC(npc)
 					}
+
+					// Schedule messages shouldn't be seen by admins
+					if (plugin.scheduleManager.getSchedule(npc.name) != null &&
+						!inRange &&
+						p.hasPermission("story.conversation.hearglobal")
+					) {
+						shouldSee = false
+					}
+
 					// Send messages to players who should see them
 					if (shouldSee) {
+						playersCount++
 						parsedMessages.forEach { message ->
 							p.sendMessage(message)
 						}
+					}
+				}
+
+				if (playersCount > 0) {
+					// Wait for gender determination and then play sound
+					genderFuture.thenAccept { gender ->
+						// Use cached lastPlayedSound to avoid repetition
+						val npcKey = npc.name
+						val lastSound = lastPlayedSound[npcKey]
+
+						plugin.audioManager
+							.playRandomVoice(
+								location = npc.entity.location,
+								gender = gender,
+								lastPlayed = lastSound,
+							).thenAccept { soundId ->
+								// Update the last played sound for this NPC
+								lastPlayedSound[npcKey] = soundId
+							}
 					}
 				}
 
@@ -120,6 +194,123 @@ class NPCMessageService(private val plugin: Story) {
 				}
 			},
 		)
+	}
+
+	/**
+	 * Determines an NPC's gender using AI analysis based on name, context and memories
+	 * Falls back to tags and pronouns if AI determination fails
+	 */
+
+	/**
+	 * Asynchronously determines an NPC's gender
+	 * Returns a CompletableFuture that will be completed with the gender
+	 */
+	private fun determineNPCGenderAsync(npcName: String): CompletableFuture<String> {
+		// Create the result future
+		val resultFuture = CompletableFuture<String>()
+
+		// First check the cache
+		genderCache[npcName]?.let {
+			resultFuture.complete(it)
+			return resultFuture
+		}
+
+		// First try the fast approach with tags and pronouns
+		val npcContext = plugin.npcContextGenerator.getOrCreateContextForNPC(npcName)
+		val contextStr = npcContext?.context ?: ""
+
+		// Check for explicit gender tag
+		val genderTagRegex = Regex("GENDER:\\s*(\\w+)", RegexOption.IGNORE_CASE)
+		val genderTagMatch = genderTagRegex.find(contextStr)
+
+		// If we have an explicit tag, use it immediately without AI
+		if (genderTagMatch != null) {
+			val explicitGender = genderTagMatch.groupValues[1].lowercase()
+			val result =
+				when (explicitGender) {
+					"female" -> "girl"
+					"male" -> "man"
+					else -> explicitGender
+				}
+			// Cache the result
+			genderCache[npcName] = result
+			resultFuture.complete(result)
+			return resultFuture
+		}
+
+		// If we get here, we need to use AI
+		// Run AI determination in another thread
+		CompletableFuture.runAsync {
+			try {
+				val npcData = plugin.npcDataManager.getNPCData(npcName)
+				val memoriesContext =
+					npcData
+						?.memory
+						?.sortedByDescending { it.lastAccessed }
+						?.take(3)
+						?.joinToString("\n") { it.content }
+						?: ""
+
+				val prompt = mutableListOf<ConversationMessage>()
+				prompt.add(
+					ConversationMessage(
+						"system",
+						"""
+                    Based on the character name, context, and memories provided, determine the character's gender.
+                    Consider name conventions, pronouns used, and any context clues in memories or descriptions.
+                    Respond ONLY with one of these words: "girl", "man", or "unknown".
+                    """,
+					),
+				)
+
+				prompt.add(
+					ConversationMessage(
+						"user",
+						"""
+                    Character Name: $npcName
+
+                    Character Context:
+                    $contextStr
+
+                    Character Memories:
+                    $memoriesContext
+                    """,
+					),
+				)
+
+				// Get AI response - wait as long as needed
+				val response =
+					plugin
+						.getAIResponse(prompt)
+						.get()
+						?.trim()
+						?.lowercase()
+
+				// Determine gender from response
+				val aiGender =
+					when {
+						response?.contains("girl") == true ||
+							response?.contains("female") == true ||
+							response?.contains("woman") == true -> "girl"
+						response?.contains("man") == true ||
+							response?.contains("male") == true -> "man"
+						else -> "man" // Default fallback
+					}
+
+				// Cache the result
+				genderCache[npcName] = aiGender
+
+				// Complete the future
+				resultFuture.complete(aiGender)
+			} catch (e: Exception) {
+				plugin.logger.warning("AI gender determination failed for NPC $npcName: ${e.message}")
+				// Default fallback on error
+				genderCache[npcName] = "man"
+				resultFuture.complete("man")
+			}
+		}
+
+		return resultFuture
 	}
 
 	// Helper methods for text wrapping
@@ -228,8 +419,6 @@ class NPCMessageService(private val plugin: Story) {
 		private var instance: NPCMessageService? = null
 
 		@JvmStatic
-		fun getInstance(plugin: Story): NPCMessageService {
-			return instance ?: NPCMessageService(plugin).also { instance = it }
-		}
+		fun getInstance(plugin: Story): NPCMessageService = instance ?: NPCMessageService(plugin).also { instance = it }
 	}
 }

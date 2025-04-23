@@ -8,10 +8,9 @@ data class StoryLocation(
 	val context: MutableList<String>,
 	var bukkitLocation: Location? = null,
 	var parentLocationName: String? = null,
+	val allowedNPCs: MutableList<String> = mutableListOf(),
 ) {
-	fun hasParent(): Boolean {
-		return !parentLocationName.isNullOrEmpty()
-	}
+	fun hasParent(): Boolean = !parentLocationName.isNullOrEmpty()
 
 	// two different constructors
 	constructor(name: String, context: MutableList<String>, bukkitLocation: Location) : this(
@@ -50,6 +49,12 @@ data class StoryLocation(
 		return allContext
 	}
 
+	/**
+	 * Checks if a location is a sublocation (has a parent)
+	 */
+	val isSubLocation: Boolean
+		get() = this.parentLocationName != null || this.name.contains("/")
+
 	// Format the full context for use in prompts
 	fun getContextForPrompt(locationRegistry: Map<String, StoryLocation>): String {
 		val fullContext = getFullContext(locationRegistry)
@@ -80,8 +85,7 @@ data class StoryLocation(
 	}
 
 	// Override toString to match the original format exactly
-	override fun toString(): String {
-		return "Location{name='$name', bukkitLocation=$bukkitLocation, " +
+	override fun toString(): String =
+		"Location{name='$name', bukkitLocation=$bukkitLocation, " +
 			"context=$context, parent='$parentLocationName'}"
-	}
 }

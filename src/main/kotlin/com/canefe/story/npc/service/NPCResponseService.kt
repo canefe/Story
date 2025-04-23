@@ -100,7 +100,7 @@ class NPCResponseService(
 		return plugin.getAIResponse(prompts).thenApply { response ->
 			val finalResponse = response ?: "No response generated."
 			if (broadcast) {
-				plugin.npcMessageService.broadcastNPCMessage(finalResponse, npc)
+				plugin.npcMessageService.broadcastNPCMessage(finalResponse, npc, npcContext = npcContext)
 			}
 			// Get the current player in conversation with this NPC, if any
 			val targetPlayer =
@@ -109,6 +109,11 @@ class NPCResponseService(
 				}
 			// Analyze response for action intents asynchronously
 			if (targetPlayer != null) {
+				plugin.npcActionIntentRecognizer.recognizeQuestGivingIntent(
+					npc,
+					finalResponse,
+					targetPlayer,
+				)
 				plugin.npcActionIntentRecognizer.recognizeActionIntents(npc, finalResponse, targetPlayer)
 			}
 			finalResponse
@@ -195,6 +200,21 @@ class NPCResponseService(
 		val response = generateNPCResponse(npc, listOf(prompts.joinToString(separator = "\n")), false).join()
 
 		return response
+	}
+
+	fun generateNPCGoodbye(
+		npc: NPC,
+		goodbyeContext: List<String>? = null,
+	): CompletableFuture<String?> {
+		val prompt = "You are ${npc.name}. You are in a conversation and it is time to say goodbye. Your goodbye must reflect your personality, your relationship and recent memories, especially with the target. Generate a brief goodbye."
+
+		val prompts: MutableList<String> = ArrayList()
+		prompts.addAll(goodbyeContext ?: emptyList())
+		prompts.add(prompt)
+
+		val response = generateNPCResponse(npc, listOf(prompts.joinToString(separator = "\n")), true).join()
+
+		return CompletableFuture.completedFuture(response)
 	}
 
 	fun summarizeConversation(

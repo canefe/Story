@@ -4,6 +4,7 @@ import com.canefe.story.Story
 import com.canefe.story.util.PluginUtils
 import net.citizensnpcs.api.CitizensAPI
 import net.citizensnpcs.api.npc.NPC
+import net.citizensnpcs.trait.EntityPoseTrait
 import net.citizensnpcs.trait.RotationTrait
 import org.bukkit.Bukkit
 import org.bukkit.entity.Entity
@@ -11,7 +12,9 @@ import org.bukkit.entity.Player
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.random.Random
 
-class NPCBehaviorManager(private val plugin: Story) {
+class NPCBehaviorManager(
+	private val plugin: Story,
+) {
 	private val npcBehaviorTasks: MutableMap<String, Int> = ConcurrentHashMap()
 	private val npcLastLookTimes: MutableMap<String, Long> = ConcurrentHashMap()
 	private val npcLookIntervals: MutableMap<String, Int> = ConcurrentHashMap()
@@ -44,6 +47,7 @@ class NPCBehaviorManager(private val plugin: Story) {
 	private fun updateNPCBehavior(npc: NPC) {
 		val npcName = npc.name ?: return
 		val currentTime = System.currentTimeMillis()
+		val headRotationDelay = plugin.config.headRotationDelay
 
 		// If NPC is in conversation, let the conversation manager handle behaviors
 		if (npcsInConversation.contains(npcName)) return
@@ -51,7 +55,7 @@ class NPCBehaviorManager(private val plugin: Story) {
 		// Initialize timers if not set
 		if (!npcLastLookTimes.containsKey(npcName)) {
 			npcLastLookTimes[npcName] = currentTime
-			npcLookIntervals[npcName] = Random.nextInt(1000) + 500 // 2-5 seconds
+			npcLookIntervals[npcName] = Random.nextInt(headRotationDelay * 1000) + 1000 // 2-5 seconds
 		}
 
 		// Check if it's time to look at something new
@@ -61,7 +65,7 @@ class NPCBehaviorManager(private val plugin: Story) {
 		if (currentTime - lastLookTime > lookInterval) {
 			// Reset timer and set new interval
 			npcLastLookTimes[npcName] = currentTime
-			npcLookIntervals[npcName] = Random.nextInt(1000) + 500
+			npcLookIntervals[npcName] = Random.nextInt(headRotationDelay * 1000) + 1000
 
 			// Get nearby entities to potentially look at
 			val nearbyEntities = getNearbyEntities(npc)
@@ -73,6 +77,7 @@ class NPCBehaviorManager(private val plugin: Story) {
 				// 60% chance to look at someone nearby if entities are present
 				nearbyEntities.isNotEmpty() && decision < 0.6 -> {
 					val target = nearbyEntities[Random.nextInt(nearbyEntities.size)]
+
 					Bukkit.getScheduler().runTask(
 						plugin,
 						Runnable {
@@ -89,20 +94,43 @@ class NPCBehaviorManager(private val plugin: Story) {
 				// 25% chance to look in a random direction
 				decision < 0.85 -> {
 					val rot = npc.getOrAddTrait(RotationTrait::class.java)
-					// Get current head yaw
-					val currentYaw = net.citizensnpcs.util.NMS.getHeadYaw(npc.entity)
 
-					// Generate a random angle change within a natural range (-45 to +45 degrees)
-					val yawChange = Random.nextFloat() * 90 - 45 // Range from -45 to +45 degrees
+					// Check if the NPC is sitting
+					val isSitting = npc.getOrAddTrait(EntityPoseTrait::class.java).pose == EntityPoseTrait.EntityPose.SITTING
 
+					// Get current head yaw - handle sitting NPCs differently
+					val currentYaw =
+						if (isSitting) {
+							// For sitting NPCs, use the entity's yaw instead of head yaw
+							// This avoids the "looking at bottom" issue
+							npc.entity.location.yaw
+						} else {
+							net.citizensnpcs.util.NMS
+								.getHeadYaw(npc.entity)
+						}
+
+					// Generate a more natural head movement for sitting NPCs
+					val yawChange =
+						if (isSitting) {
+							// More limited range for sitting NPCs to avoid unnatural poses
+							Random.nextFloat() * 60 - 30 // Range from -30 to +30 degrees
+						} else {
+							Random.nextFloat() * 90 - 45 // Range from -45 to +45 degrees
+						}
 					// Calculate new yaw based on current + change
 					val newYaw = currentYaw + yawChange
 
-					// Apply the new rotation, keeping pitch at 0 (looking straight)
+					// Apply the new rotation with a slightly elevated pitch for sitting NPCs
 					Bukkit.getScheduler().runTask(
 						plugin,
 						Runnable {
-							rot.physicalSession.rotateToHave(newYaw, 0f)
+							if (isSitting) {
+								// Sitting NPCs should look slightly upward (negative pitch)
+								// for a more natural appearance
+								rot.physicalSession.rotateToHave(newYaw, -10f)
+							} else {
+								rot.physicalSession.rotateToHave(newYaw, 0f)
+							}
 						},
 					)
 				}
@@ -124,11 +152,58 @@ class NPCBehaviorManager(private val plugin: Story) {
 		for (entity in nearbyEntities) {
 			// Only consider players and other NPCs
 			if ((entity is Player || entity.hasMetadata("NPC")) && entity != npc.entity) {
+				// Check line of sight
 				entities.add(entity)
 			}
 		}
 
 		return entities
+	}
+
+	/**
+	 * Checks if the NPC has a clear line of sight to the target entity
+	 */
+	private fun hasLineOfSight(
+		npc: NPC,
+		target: Entity,
+	): Boolean {
+		// Citizens NPCs don't directly support hasLineOfSight
+		// We can use raycasting to check this
+
+		if (!npc.isSpawned) return false
+
+		val npcEntity = npc.entity
+		val npcEyes =
+			npcEntity.location.add(
+				0.0,
+				net.citizensnpcs.util.NMS
+					.getHeadYaw(npc.entity)
+					.toDouble(),
+				0.0,
+			)
+		val targetEyes =
+			if (target is Player) {
+				target.eyeLocation
+			} else {
+				target.location.add(0.0, target.height / 2, 0.0)
+			}
+
+		// Get direction vector from NPC to target
+		val direction = targetEyes.toVector().subtract(npcEyes.toVector())
+		val distance = direction.length()
+
+		// Check if any block obstructs the view
+		val ray =
+			npcEntity.world.rayTraceBlocks(
+				npcEyes,
+				direction.normalize(),
+				distance,
+				org.bukkit.FluidCollisionMode.NEVER,
+				true,
+			)
+
+		// If ray is null or hit location is very close to target, there's line of sight
+		return ray == null || (ray.hitPosition?.toLocation(npcEntity.world)?.distance(targetEyes) ?: 0.0) < 0.5
 	}
 
 	private fun showIdleHologram(npc: NPC) {
@@ -140,20 +215,17 @@ class NPCBehaviorManager(private val plugin: Story) {
 				"&7&oblinks slowly",
 				"&7&oyawns",
 				"&7&oclears throat",
-				"&7&omumbles something",
+				"&7&omumbles",
 				"&7&oscratches head",
-				"&7&orolls shoulders",
-				"&7&omutters under breath",
+				"&7&omutters",
 				"&7&obreathes deeply",
 				"&7&ogroans quietly",
 				"&7&ofidgets",
 				"&7&osniffs",
 				"&7&ostretches neck",
-				"&7&olooks up at the sky",
 				"&7&otilts head",
 				"&7&onarrows eyes",
 				"&7&onods slowly",
-				"&7&ostares into the distance",
 			)
 
 		val randomAction = idleActions[Random.nextInt(idleActions.size)]
@@ -163,24 +235,34 @@ class NPCBehaviorManager(private val plugin: Story) {
 		// Use your existing hologram system to show the action
 		if (PluginUtils.isPluginEnabled("DecentHolograms")) {
 			try {
-				val npcPos = npc.entity.location.clone().add(0.0, 2.10, 0.0)
+				val npcPos =
+					npc.entity.location
+						.clone()
+						.add(0.0, 2.10, 0.0)
 
 				// Check if the hologram already exists and remove it first
-				val existingHologram = eu.decentsoftware.holograms.api.DHAPI.getHologram(hologramName)
+				val existingHologram =
+					eu.decentsoftware.holograms.api.DHAPI
+						.getHologram(hologramName)
 				if (existingHologram != null) {
-					eu.decentsoftware.holograms.api.DHAPI.removeHologram(hologramName)
+					eu.decentsoftware.holograms.api.DHAPI
+						.removeHologram(hologramName)
 				}
 
 				// Create new hologram
-				val hologram = eu.decentsoftware.holograms.api.DHAPI.createHologram(hologramName, npcPos)
-				eu.decentsoftware.holograms.api.DHAPI.addHologramLine(hologram, 0, randomAction)
+				val hologram =
+					eu.decentsoftware.holograms.api.DHAPI
+						.createHologram(hologramName, npcPos)
+				eu.decentsoftware.holograms.api.DHAPI
+					.addHologramLine(hologram, 0, randomAction)
 
 				// Remove after a short delay
 				Bukkit.getScheduler().runTaskLater(
 					plugin,
 					Runnable {
 						try {
-							eu.decentsoftware.holograms.api.DHAPI.removeHologram(hologramName)
+							eu.decentsoftware.holograms.api.DHAPI
+								.removeHologram(hologramName)
 						} catch (e: Exception) {
 							// Hologram might already be removed, just ignore
 						}

@@ -13,11 +13,11 @@ import dev.jorel.commandapi.CommandAPIBukkitConfig
 import dev.jorel.commandapi.CommandAPICommand
 import dev.jorel.commandapi.arguments.*
 import dev.jorel.commandapi.executors.CommandArguments
+import dev.jorel.commandapi.executors.CommandExecutor
 import dev.jorel.commandapi.executors.PlayerCommandExecutor
 import net.citizensnpcs.api.CitizensAPI
 import net.citizensnpcs.api.npc.NPC
 import org.bukkit.Bukkit
-import org.bukkit.command.CommandExecutor
 import org.bukkit.entity.Player
 
 /**
@@ -63,6 +63,19 @@ class CommandManager(
 	}
 
 	private fun registerSimpleCommands() {
+		// resetcitizensnavigation
+		CommandAPICommand("resetcitizensnavigation")
+			.withPermission("storymaker.npc.navigation")
+			.executes(
+				CommandExecutor { sender, _ ->
+					val npcRegistry = CitizensAPI.getNPCRegistry()
+					for (npc in npcRegistry) {
+						npc.navigator.cancelNavigation()
+					}
+					sender.sendSuccess("All NPC navigation has been reset.")
+				},
+			).register()
+
 		// Register simple commands using CommandAPI
 		CommandAPICommand("togglechat")
 			.withPermission("storymaker.chat.toggle")
@@ -138,6 +151,32 @@ class CommandManager(
 				},
 			).register()
 
+		// toggleschedule [<random_pathing>] toggle schedules or random pathing
+		CommandAPICommand("toggleschedule")
+			.withPermission("storymaker.npc.schedule")
+			.withOptionalArguments(BooleanArgument("random_pathing"))
+			.executes(
+				dev.jorel.commandapi.executors.CommandExecutor { sender, args ->
+					val randomPathing = args.getOptional("random_pathing").orElse(null) as? Boolean
+					if (randomPathing != null) {
+						plugin.config.randomPathingEnabled = randomPathing
+						if (randomPathing) {
+							sender.sendSuccess("Random pathing enabled.")
+						} else {
+							sender.sendError("Random pathing disabled.")
+						}
+					} else {
+						plugin.config.scheduleEnabled = !plugin.config.scheduleEnabled
+						if (plugin.config.scheduleEnabled) {
+							sender.sendSuccess("Schedules enabled.")
+						} else {
+							sender.sendError("Schedules disabled.")
+						}
+					}
+					plugin.config.save()
+				},
+			).register()
+
 		// npctalk
 		CommandAPICommand("npctalk")
 			.withPermission("storymaker.npc.talk")
@@ -203,6 +242,17 @@ class CommandManager(
 							return@PlayerCommandExecutor
 						}
 
+					// Set the Location for the NPC
+					val npcData =
+						NPCData(
+							npcName,
+							npcContext.role,
+							storyLocation,
+							npcContext.context,
+						)
+
+					plugin.npcDataManager.saveNPCData(npcName, npcData)
+
 					if (prompt.isNotEmpty()) {
 						// Inform player we're generating context
 						player.sendInfo(
@@ -229,6 +279,26 @@ class CommandManager(
 							),
 						)
 
+						// Find relevant lore related to the context
+						val loreContexts = plugin.lorebookManager.findLoresByKeywords(prompt)
+						val loreInfo =
+							if (loreContexts.isNotEmpty()) {
+								"Relevant lore found: " + loreContexts.joinToString(", ") { it.loreName }
+							} else {
+								"No relevant lore found for the given context."
+							}
+
+						player.sendSuccess(loreInfo)
+
+						// Include relevant lore in the prompt
+						messages.add(
+							ConversationMessage(
+								"system",
+								"Include these world lore elements in your writing:\n" +
+									loreContexts.joinToString("\n\n") { "- ${it.loreName}: ${it.context}" },
+							),
+						)
+
 						messages.add(
 							ConversationMessage(
 								"system",
@@ -245,6 +315,14 @@ class CommandManager(
 									"Be creative, detailed, and make the character feel alive. " +
 									"Format the response as 'ROLE: [brief role description]' followed by " +
 									"a detailed paragraph about the character.",
+							),
+						)
+
+						// Add the random npc context
+						messages.add(
+							ConversationMessage(
+								"system",
+								npcContext.context,
 							),
 						)
 
@@ -300,7 +378,7 @@ class CommandManager(
 												npcName,
 												npcContext.role,
 												storyLocation,
-												plugin.config.defaultContext,
+												npcContext.context,
 											)
 										plugin.npcDataManager.saveNPCData(npcName, npcData)
 
@@ -419,6 +497,40 @@ class CommandManager(
 							}
 						}
 					}
+				},
+			).register()
+
+		registerSafeStopCommand()
+	}
+
+	fun registerSafeStopCommand() {
+		// Create a command to safely stop the plugin
+		CommandAPICommand("safestop")
+			.withPermission("story.admin")
+			.withFullDescription("Safely stops the Story plugin, ensuring all conversations are summarized")
+			.executes(
+				CommandExecutor { sender, _ ->
+					sender.sendMessage("§6Starting safe shutdown process... Please wait.")
+
+					// Run async to avoid blocking the main thread
+					Bukkit.getScheduler().runTaskAsynchronously(
+						plugin,
+						Runnable {
+							plugin.safeStop().thenRun {
+								sender.sendMessage("§2Story plugin has been safely shut down.")
+								// Schedule server shutdown on the main thread
+								Bukkit.getScheduler().runTask(
+									plugin,
+									Runnable {
+										sender.sendMessage("§6Stopping the server...")
+										Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "stop")
+									},
+								)
+							}
+						},
+					)
+
+					1
 				},
 			).register()
 	}

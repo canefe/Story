@@ -12,7 +12,9 @@ import java.util.concurrent.CompletableFuture
 /**
  * Service responsible for handling radiant conversations between NPCs and players
  */
-class RadiantConversationService(private val plugin: Story) {
+class RadiantConversationService(
+	private val plugin: Story,
+) {
 	private val npcManager = NPCManager.getInstance(plugin)
 
 	/**
@@ -76,10 +78,29 @@ class RadiantConversationService(private val plugin: Story) {
 			return
 		}
 
-		val random = Random()
-		val choosePlayer = random.nextBoolean() // 50% chance to choose player
+		// First check if player is a valid potential target
+		val isPlayerValid = !isPlayerInvalidTarget(player)
 
-		if (choosePlayer && !isPlayerInvalidTarget(player)) {
+		// Then check if there are other valid NPC targets
+		val nearbyNPCs = plugin.getNearbyNPCs(initiator, plugin.config.radiantRadius)
+		val hasValidNPCTarget =
+			nearbyNPCs.any { npc ->
+				!plugin.conversationManager.isInConversation(npc) &&
+					!npcManager.isNPCOnCooldown(npc) &&
+					!plugin.npcManager.isNPCDisabled(npc) &&
+					npc != initiator
+			}
+
+		// Make random decision only if both options are possible
+		val random = Random()
+		val choosePlayer =
+			if (isPlayerValid && hasValidNPCTarget) {
+				random.nextBoolean() // 50% chance only when both options are possible
+			} else {
+				isPlayerValid // Choose player only if it's the only valid option
+			}
+
+		if (choosePlayer && isPlayerValid) {
 			val playerName = EssentialsUtils.getNickname(player.name)
 
 			// Check if the relationship is strong enough
@@ -91,19 +112,20 @@ class RadiantConversationService(private val plugin: Story) {
 
 			// Target is player
 			initiatePlayerConversation(initiator, player)
-		} else {
+		} else if (hasValidNPCTarget) {
 			// Target is another NPC
 			initiateNPCConversation(initiator)
 		}
+		// If neither option is valid, conversation attempt fails silently
 	}
 
 	/**
 	 * Check if a player is an invalid target for conversation
 	 */
-	private fun isPlayerInvalidTarget(player: Player): Boolean {
-		return isVanished(player) || plugin.playerManager.isPlayerDisabled(player) ||
+	private fun isPlayerInvalidTarget(player: Player): Boolean =
+		isVanished(player) ||
+			plugin.playerManager.isPlayerDisabled(player) ||
 			plugin.conversationManager.isInConversation(player)
-	}
 
 	/**
 	 * Check if a player is vanished
@@ -185,6 +207,8 @@ class RadiantConversationService(private val plugin: Story) {
 			plugin.npcContextGenerator.getOrCreateContextForNPC(initiatorName)
 				?: return
 
+		npcManager.setNPCCooldown(targetNPC)
+
 		CompletableFuture.runAsync {
 			try {
 				// Get AI response
@@ -195,7 +219,6 @@ class RadiantConversationService(private val plugin: Story) {
 					plugin,
 					Runnable {
 						npcManager.walkToNPC(initiator, targetNPC, greeting)
-						npcManager.setNPCCooldown(targetNPC)
 					},
 				)
 			} catch (e: Exception) {

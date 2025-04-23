@@ -12,7 +12,9 @@ import java.io.File
 import java.util.*
 import java.util.logging.Level
 
-class PlayerManager(private val plugin: Story) {
+class PlayerManager(
+	private val plugin: Story,
+) {
 	// Player to NPC mapping
 	val playerCurrentNPC = HashMap<UUID, UUID>()
 
@@ -21,6 +23,9 @@ class PlayerManager(private val plugin: Story) {
 
 	// Players who disabled right-click interactions
 	private val disabledPlayers = mutableListOf<String>()
+
+	// Admins who disabled global hearing
+	val disabledHearing = mutableListOf<UUID>()
 
 	// Quest data
 	private val playerQuestTitles = HashMap<UUID, String>()
@@ -42,9 +47,7 @@ class PlayerManager(private val plugin: Story) {
 		playerCurrentNPC[player] = npc
 	}
 
-	fun getCurrentNPC(player: UUID): UUID? {
-		return playerCurrentNPC[player]
-	}
+	fun getCurrentNPC(player: UUID): UUID? = playerCurrentNPC[player]
 
 	fun removeCurrentNPC(player: UUID) {
 		playerCurrentNPC.remove(player)
@@ -59,9 +62,8 @@ class PlayerManager(private val plugin: Story) {
 		playerSpyingConversation[player] = conversationId
 	}
 
-	fun getSpyingConversation(player: Player): Conversation? {
-		return plugin.conversationManager.getConversationById(playerSpyingConversation[player.uniqueId] ?: -1)
-	}
+	fun getSpyingConversation(player: Player): Conversation? =
+		plugin.conversationManager.getConversationById(playerSpyingConversation[player.uniqueId] ?: -1)
 
 	fun stopSpying(player: UUID) {
 		playerSpyingConversation.remove(player)
@@ -85,13 +87,9 @@ class PlayerManager(private val plugin: Story) {
 		saveDisabledPlayers()
 	}
 
-	fun isPlayerDisabled(player: Player): Boolean {
-		return disabledPlayers.contains(player.name)
-	}
+	fun isPlayerDisabled(player: Player): Boolean = disabledPlayers.contains(player.name)
 
-	fun getDisabledPlayers(): List<String> {
-		return disabledPlayers.toList()
-	}
+	fun getDisabledPlayers(): List<String> = disabledPlayers.toList()
 
 	// Quest methods
 
@@ -104,9 +102,6 @@ class PlayerManager(private val plugin: Story) {
 		playerQuestTitles[playerUUID] = title
 		playerQuestObjectives[playerUUID] = objective
 
-		// Notify player
-		player.sendSuccess("New quest received: <gold>$title</gold>")
-		player.sendInfo("Objective: <white>$objective</white>")
 		saveData()
 	}
 
@@ -134,13 +129,9 @@ class PlayerManager(private val plugin: Story) {
 		}
 	}
 
-	fun getQuestTitle(player: Player): String {
-		return playerQuestTitles[player.uniqueId] ?: ""
-	}
+	fun getQuestTitle(player: Player): String = playerQuestTitles[player.uniqueId] ?: ""
 
-	fun getQuestObjective(player: Player): String {
-		return playerQuestObjectives[player.uniqueId] ?: "> No quests active."
-	}
+	fun getQuestObjective(player: Player): String = playerQuestObjectives[player.uniqueId] ?: "> No quests active."
 
 	// Team methods
 

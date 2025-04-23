@@ -1,6 +1,7 @@
 package com.canefe.story.command.story.location
 
 import com.canefe.story.util.Msg.sendError
+import com.canefe.story.util.Msg.sendSuccess
 import dev.jorel.commandapi.CommandAPICommand
 import dev.jorel.commandapi.arguments.GreedyStringArgument
 import dev.jorel.commandapi.executors.PlayerCommandExecutor
@@ -25,6 +26,8 @@ class CreateLocationCommand(
 						}
 
 					commandUtils.locationManager.saveLocation(location)
+
+					player.sendSuccess("Location <gold>'$locationName'</gold> created successfully at your current location.")
 				},
 			)
 	}

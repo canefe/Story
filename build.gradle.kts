@@ -2,6 +2,8 @@ import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
+val serverPluginsDir = file("C:/Users/ideal/Desktop/testserver/plugins")
+
 plugins {
 	kotlin("jvm") version "2.1.20"
 	id("com.github.johnrengelman.shadow") version "8.1.1"
@@ -27,13 +29,24 @@ repositories {
 	maven("https://maven.devs.beer/")
 	maven(url = "https://repo.codemc.org/repository/maven-public/")
 	maven(url = "https://mvn.lumine.io/repository/maven-public/")
+	flatDir {
+		dirs(
+			"libs",
+			"lib",
+		)
+	}
 }
 
 dependencies {
 	compileOnly("io.papermc.paper:paper-api:1.21.1-R0.1-SNAPSHOT")
 	compileOnly("net.citizensnpcs:citizens-main:2.0.38-SNAPSHOT")
 	compileOnly("org.mcmonkey:sentinel:2.9.1-SNAPSHOT")
-	compileOnly(files("lib/RealisticSeasons.jar"))
+	compileOnly(
+		fileTree("lib") {
+			include("RealisticSeasons.jar")
+			include("ReviveMe-API.jar")
+		},
+	)
 	implementation("net.kyori:adventure-api:4.17.0")
 	implementation("dev.jorel:commandapi-bukkit-shade:10.0.0")
 	compileOnly("com.github.decentsoftware-eu:decentholograms:2.8.12")
@@ -44,6 +57,7 @@ dependencies {
 	compileOnly("io.lumine:Mythic-Dist:5.6.1")
 	implementation("com.squareup.okhttp3:okhttp:4.12.0")
 	implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
+	implementation("com.github.stefvanschie.inventoryframework:IF:0.10.19")
 
 	testImplementation("org.junit.jupiter:junit-jupiter-api:5.9.2")
 	testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.9.2")
@@ -84,6 +98,7 @@ tasks.test {
 
 tasks.withType<ShadowJar> {
 	relocate("dev.jorel.commandapi", "com.canefe.story.commandapi")
+	relocate("com.github.stefvanschie.inventoryframework", "com.canefe.story.story.inventoryframework")
 	archiveClassifier.set("")
 }
 
@@ -105,6 +120,18 @@ tasks.processResources {
 	filteringCharset = "UTF-8"
 	filesMatching("plugin.yml") {
 		expand(props)
+	}
+}
+
+tasks.register<Copy>("copyToServer") {
+	dependsOn("shadowJar")
+
+	val shadowJar = tasks.named<Jar>("shadowJar").get()
+	from(shadowJar.archiveFile.get().asFile)
+	into(serverPluginsDir)
+
+	doLast {
+		println("✅ Copied fat plugin JAR to: $serverPluginsDir")
 	}
 }
 

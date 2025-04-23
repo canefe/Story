@@ -1,7 +1,6 @@
 package com.canefe.story.command.conversation
 
 import com.canefe.story.util.Msg.sendInfo
-import com.canefe.story.util.Msg.sendSuccess
 import dev.jorel.commandapi.CommandAPICommand
 import dev.jorel.commandapi.arguments.IntegerArgument
 import dev.jorel.commandapi.executors.CommandExecutor
@@ -17,21 +16,14 @@ class ConvEndCommand(
 					val id = args.get("conversation_id") as Int
 
 					// Get conversation
-					val convo =
+					val conversation =
 						commandUtils.getConversation(id, sender)
 							?: return@CommandExecutor
 
-					// Add System Message
-					convo.addSystemMessage(
-						"Each NPC should now deliver a final line or action that reflects their current feelings and intentions. Let them exit the scene naturally — avoid stating that the conversation is ending.",
+					// Generate goodbye
+					commandUtils.conversationManager.endConversationWithGoodbye(
+						conversation,
 					)
-
-					commandUtils.conversationManager.generateResponses(convo).thenRun {
-						// End conversation
-						commandUtils.conversationManager.endConversation(convo)
-						sender.sendSuccess("Conversation ended.")
-					}
-
 					sender.sendInfo("Ending conversation with ID $id...")
 				},
 			)

@@ -7,14 +7,15 @@ import dev.jorel.commandapi.executors.CommandExecutor
 class ConvToggleCommand(
 	private val commandUtils: ConvCommandUtils,
 ) {
-	fun getCommand(): CommandAPICommand {
-		return CommandAPICommand("toggle")
+	fun getCommand(): CommandAPICommand =
+		CommandAPICommand("toggle")
 			.withArguments(
-				dev.jorel.commandapi.arguments.IntegerArgument("conversation_id"),
-			)
-			.executes(
+				dev.jorel.commandapi.arguments
+					.IntegerArgument("conversation_id"),
+			).executes(
 				CommandExecutor { sender, args ->
 					val id = args.get("conversation_id") as Int
+
 					// Get Conversation
 					val conversation = commandUtils.getConversation(id, sender)
 
@@ -28,5 +29,4 @@ class ConvToggleCommand(
 					}
 				},
 			)
-	}
 }

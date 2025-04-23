@@ -1,6 +1,7 @@
 package com.canefe.story
 
 import ConversationManager
+import com.canefe.story.audio.AudioManager
 import com.canefe.story.command.base.CommandManager
 import com.canefe.story.config.ConfigService
 import com.canefe.story.conversation.ConversationMessage
@@ -21,6 +22,8 @@ import com.canefe.story.npc.service.NPCResponseService
 import com.canefe.story.npc.util.NPCUtils
 import com.canefe.story.player.NPCManager
 import com.canefe.story.player.PlayerManager
+import com.canefe.story.quest.QuestListener
+import com.canefe.story.quest.QuestManager
 import com.canefe.story.service.AIResponseService
 import com.canefe.story.util.PluginUtils
 import com.canefe.story.util.TimeService
@@ -50,11 +53,15 @@ class Story :
 	val gson = com.google.gson.Gson()
 
 	// Services and managers
+	lateinit var audioManager: AudioManager
+
 	lateinit var npcDataManager: NPCDataManager
 		private set
 
 	lateinit var npcBehaviorManager: NPCBehaviorManager
 		private set
+
+	lateinit var questManager: QuestManager
 
 	lateinit var conversationManager: ConversationManager
 		private set
@@ -128,6 +135,8 @@ class Story :
 		// Start radiant conversation service
 		radiantConversationService.startProximityTask()
 
+		server.pluginManager.registerEvents(QuestListener(this), this)
+
 		// Load configuration
 		configService.reload()
 	}
@@ -157,10 +166,13 @@ class Story :
 		// Initialize the time service
 		timeService = TimeService(this)
 
+		// Initialize the audio
+		audioManager = AudioManager(this)
 		// Initialize in order of dependencies
 		npcContextGenerator = NPCContextGenerator(this)
 		npcDataManager = NPCDataManager.getInstance(this)
 		locationManager = LocationManager.getInstance(this)
+		questManager = QuestManager.getInstance(this)
 		npcUtils = NPCUtils.getInstance(this)
 		npcManager = NPCManager.getInstance(this)
 		scheduleManager = NPCScheduleManager.getInstance(this)
@@ -203,6 +215,52 @@ class Story :
 		eventManager.unregisterAll()
 	}
 
+	/**
+	 * Safely stops the plugin by properly ending all ongoing conversations first
+	 * and then shutting down all services.
+	 */
+	fun safeStop(): CompletableFuture<Void> {
+		logger.info("Starting safe shutdown process...")
+
+		val futures = ArrayList<CompletableFuture<Void>>()
+
+		// Get all active conversations
+		val activeConversations = conversationManager.getAllActiveConversations()
+
+		if (activeConversations.isEmpty()) {
+			logger.info("No active conversations to summarize.")
+		} else {
+			logger.info("Ending ${activeConversations.size} active conversations...")
+
+			// End each conversation and collect futures
+			for (conversation in activeConversations) {
+				val future = conversationManager.endConversation(conversation)
+				futures.add(future)
+			}
+		}
+
+		// Create an all-completed future
+		return CompletableFuture.allOf(*futures.toTypedArray()).thenApply {
+			logger.info("All conversations have been safely ended and summarized.")
+			logger.info("Shutting down plugin services...")
+
+			// Cancel all scheduled tasks
+			conversationManager.cancelScheduledTasks()
+
+			// Shutdown scheduled tasks
+			scheduleManager.shutdown()
+
+			// Unregister commands
+			commandManager.onDisable()
+
+			// Unregister events
+			eventManager.unregisterAll()
+
+			logger.info("Story plugin has been safely shut down.")
+			null
+		}
+	}
+
 	// TODO: This method should be moved to a dedicated NPC service
 	fun getNearbyNPCs(
 		player: Player,
@@ -213,7 +271,7 @@ class Story :
 			.filter { npc ->
 				npc.isSpawned &&
 					npc.entity.location.world == player.location.world &&
-					npc.entity.location.distance(player.location) <= radius
+					npc.entity.location.distanceSquared(player.location) <= radius
 			}
 
 	// TODO: This method should be moved to a dedicated NPC service
@@ -229,7 +287,7 @@ class Story :
 				otherNpc.isSpawned &&
 					otherNpc != npc &&
 					otherNpc.entity.location.world == npc.entity.location.world &&
-					otherNpc.entity.location.distance(npc.entity.location) <= radius
+					otherNpc.entity.location.distanceSquared(npc.entity.location) <= radius
 			}
 	}
 
@@ -237,12 +295,24 @@ class Story :
 	fun getNearbyPlayers(
 		npc: NPC,
 		radius: Double,
+		ignoreY: Boolean = false,
 	): List<Player> {
 		if (!npc.isSpawned) return emptyList()
 
+		val radiusSquared = radius * radius
+		val npcLoc = npc.entity.location
+
 		return Bukkit.getOnlinePlayers().filter { player ->
-			player.location.world == npc.entity.location.world &&
-				player.location.distance(npc.entity.location) <= radius
+			val loc = player.location
+			if (loc.world != npcLoc.world) return@filter false
+
+			if (ignoreY) {
+				val dx = loc.x - npcLoc.x
+				val dz = loc.z - npcLoc.z
+				(dx * dx + dz * dz) <= radiusSquared
+			} else {
+				loc.distanceSquared(npcLoc) <= radiusSquared
+			}
 		}
 	}
 

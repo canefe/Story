@@ -7,6 +7,7 @@ import java.util.concurrent.atomic.AtomicInteger
 class ConversationRepository {
 	private val activeConversations: MutableList<Conversation> = mutableListOf()
 	private val nextConversationId = AtomicInteger(1)
+	val lockedConversations: MutableList<Int> = mutableListOf()
 
 	fun addConversation(conversation: Conversation): Int {
 		val newId = nextConversationId.getAndIncrement()
@@ -19,23 +20,13 @@ class ConversationRepository {
 		activeConversations.remove(conversation)
 	}
 
-	fun getConversationByPlayer(player: Player): Conversation? {
-		return activeConversations.find { it.hasPlayer(player) }
-	}
+	fun getConversationByPlayer(player: Player): Conversation? = activeConversations.find { it.hasPlayer(player) }
 
-	fun getConversationByNPC(npc: NPC): Conversation? {
-		return activeConversations.find { it.hasNPC(npc) }
-	}
+	fun getConversationByNPC(npc: NPC): Conversation? = activeConversations.find { it.hasNPC(npc) }
 
-	fun getConversationByNPC(npcName: String): Conversation? {
-		return activeConversations.find { it.hasNPC(npcName) }
-	}
+	fun getConversationByNPC(npcName: String): Conversation? = activeConversations.find { it.hasNPC(npcName) }
 
-	fun getConversationById(id: Int): Conversation? {
-		return activeConversations.find { it.id == id }
-	}
+	fun getConversationById(id: Int): Conversation? = activeConversations.find { it.id == id }
 
-	fun getAllActiveConversations(): List<Conversation> {
-		return activeConversations.toList()
-	}
+	fun getAllActiveConversations(): List<Conversation> = activeConversations.toList()
 }

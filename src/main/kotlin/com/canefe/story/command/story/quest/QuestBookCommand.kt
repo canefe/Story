@@ -18,6 +18,7 @@ class QuestBookCommand(
 ) {
 	fun getCommand(): CommandAPICommand {
 		return CommandAPICommand("book")
+			.withPermission("story.command.quest.book")
 			.withArguments(GreedyStringArgument("context"))
 			.executesPlayer(
 				PlayerCommandExecutor { player, args ->
@@ -52,7 +53,7 @@ class QuestBookCommand(
 								"system",
 								"""
                         Generate a short narrative passage that could be found in a Minecraft book.
-                        
+
                         The passage should be:
                         - Written in a style appropriate for a fantasy Minecraft world
                         - Maximum 800 characters total
@@ -61,11 +62,11 @@ class QuestBookCommand(
 
                         IMPORTANT: Format your response as a valid JSON object with this structure:
                         {"content": "The actual book content goes here..."}
-                        
+
                         Wrap words in <bold></bold> tags to make them bold.
                         Use <italic></italic> tags for italicized text.
                         Use these where appropriate in the text.
-                        
+
                         Don't add any explanations or other text outside the JSON.
                         $loreContext
                         """,
@@ -74,56 +75,58 @@ class QuestBookCommand(
 						)
 
 					// Get AI response
-					story.getAIResponse(messages).thenAccept { aiResponse ->
-						if (aiResponse == null) {
-							player.sendError("Failed to generate book content")
-							return@thenAccept
-						}
-
-						try {
-							// Parse the JSON response
-							val bookContent = extractBookContentFromJSON(aiResponse)
-
-							if (bookContent.isBlank()) {
-								player.sendError("Failed to parse book content from AI response")
+					story
+						.getAIResponse(messages)
+						.thenAccept { aiResponse ->
+							if (aiResponse == null) {
+								player.sendError("Failed to generate book content")
 								return@thenAccept
 							}
 
-							// Split content into pages of appropriate size
-							val pages = splitIntoPages(bookContent)
+							try {
+								// Parse the JSON response
+								val bookContent = extractBookContentFromJSON(aiResponse)
 
-							// Create the book item
-							val book = ItemStack(Material.WRITTEN_BOOK)
-							val meta = book.itemMeta as BookMeta
+								if (bookContent.isBlank()) {
+									player.sendError("Failed to parse book content from AI response")
+									return@thenAccept
+								}
 
-							// Set book properties
-							meta.title(Component.text("Quest Book"))
-							meta.author(Component.text("Story Plugin"))
+								// Split content into pages of appropriate size
+								val pages = splitIntoPages(bookContent)
 
-							// Add pages to the book
-							meta.addPages(*pages.map { story.miniMessage.deserialize(it) }.toTypedArray())
+								// Create the book item
+								val book = ItemStack(Material.WRITTEN_BOOK)
+								val meta = book.itemMeta as BookMeta
 
-							book.itemMeta = meta
+								// Set book properties
+								meta.title(Component.text("Quest Book"))
+								meta.author(Component.text("Story Plugin"))
 
-							// Give the book to the player
-							if (player.inventory.firstEmpty() != -1) {
-								player.inventory.addItem(book)
-								player.sendSuccess("Quest book generated (${pages.size} pages) and added to your inventory")
-							} else {
-								player.world.dropItem(player.location, book)
-								player.sendSuccess("Quest book generated and dropped at your feet (inventory full)")
+								// Add pages to the book
+								meta.addPages(*pages.map { story.miniMessage.deserialize(it) }.toTypedArray())
+
+								book.itemMeta = meta
+
+								// Give the book to the player
+								if (player.inventory.firstEmpty() != -1) {
+									player.inventory.addItem(book)
+									player.sendSuccess("Quest book generated (${pages.size} pages) and added to your inventory")
+								} else {
+									player.world.dropItem(player.location, book)
+									player.sendSuccess("Quest book generated and dropped at your feet (inventory full)")
+								}
+							} catch (e: Exception) {
+								player.sendError("Failed to create book: ${e.message}")
+								story.logger.warning("Error creating quest book: ${e.message}")
+								e.printStackTrace()
 							}
-						} catch (e: Exception) {
-							player.sendError("Failed to create book: ${e.message}")
-							story.logger.warning("Error creating quest book: ${e.message}")
+						}.exceptionally { e ->
+							player.sendError("Error generating book: ${e.message}")
+							story.logger.warning("Error in AI response for quest book: ${e.message}")
 							e.printStackTrace()
+							null
 						}
-					}.exceptionally { e ->
-						player.sendError("Error generating book: ${e.message}")
-						story.logger.warning("Error in AI response for quest book: ${e.message}")
-						e.printStackTrace()
-						null
-					}
 				},
 			)
 	}
@@ -226,10 +229,11 @@ class QuestBookCommand(
 					val breakPoint =
 						if (chunkSize < remainingText.length) {
 							val possibleBreakPoint =
-								remainingText.substring(
-									0,
-									chunkSize,
-								).lastIndexOfAny(charArrayOf(' ', '.', '!', '?', ','))
+								remainingText
+									.substring(
+										0,
+										chunkSize,
+									).lastIndexOfAny(charArrayOf(' ', '.', '!', '?', ','))
 							if (possibleBreakPoint > 0) possibleBreakPoint + 1 else chunkSize
 						} else {
 							chunkSize

@@ -30,6 +30,20 @@ class LocationManager private constructor(
 		}
 	}
 
+	/**
+	 * Gets all sublocations for a given parent location name
+	 * @param parentLocationName The name of the parent location
+	 * @return List of all sublocations that have the specified parent
+	 */
+	fun getSublocations(parentLocationName: String): List<StoryLocation> =
+		locations.values.filter { location ->
+			// A location is a sublocation of the parent if:
+			// 1. It explicitly has the given parent name OR
+			// 2. Its name starts with parentLocationName/ (nested path structure)
+			location.parentLocationName == parentLocationName ||
+				location.name.startsWith("$parentLocationName/")
+		}
+
 	fun loadLocationData(locationName: String): StoryLocation? {
 		val locationFile = File(locationDirectory, "$locationName.yml")
 		if (!locationFile.exists()) {
@@ -41,6 +55,36 @@ class LocationManager private constructor(
 
 		locations[locationName] = storyLocation
 		return storyLocation
+	}
+
+	/**
+	 * Gets a location based on a bukkit position within a specified range
+	 * @param position The bukkit location to check
+	 * @param range The maximum distance to consider, defaults to 50 blocks
+	 * @return The closest StoryLocation within range, or null if none found
+	 */
+	fun getLocationByPosition(
+		position: Location,
+		range: Double = 50.0,
+	): StoryLocation? {
+		var closestLocation: StoryLocation? = null
+		var closestDistance = Double.MAX_VALUE
+
+		// Check all locations that have bukkit locations defined
+		for (location in locations.values) {
+			val bukkitLocation = location.bukkitLocation ?: continue
+
+			// Must be in same world
+			if (bukkitLocation.world != position.world) continue
+
+			val distance = bukkitLocation.distance(position)
+			if (distance <= range && distance < closestDistance) {
+				closestDistance = distance
+				closestLocation = location
+			}
+		}
+
+		return closestLocation
 	}
 
 	fun addLocation(storyLocation: StoryLocation) {
@@ -129,6 +173,11 @@ class LocationManager private constructor(
 
 				val location = StoryLocation(fullPath, context, effectiveParent)
 
+				// Load allowedNPCs if exists
+				if (config.contains("allowedNPCs")) {
+					location.allowedNPCs.addAll(config.getStringList("allowedNPCs"))
+				}
+
 				// Load Bukkit location if exists
 				loadBukkitLocation(config, location)
 
@@ -178,6 +227,11 @@ class LocationManager private constructor(
 
 		val location = StoryLocation(name, context, parentName)
 
+		// Load allowedNPCs
+		if (config.contains("allowedNPCs")) {
+			location.allowedNPCs.addAll(config.getStringList("allowedNPCs"))
+		}
+
 		// Load Bukkit location
 		loadBukkitLocation(config, location)
 
@@ -196,6 +250,11 @@ class LocationManager private constructor(
 		// Save parent location if it exists
 		if (location.hasParent()) {
 			config.set("parent", location.parentLocationName)
+		}
+
+		// Save allowedNPCs if not empty
+		if (location.allowedNPCs.isNotEmpty()) {
+			config.set("allowedNPCs", location.allowedNPCs)
 		}
 
 		// Save Bukkit location if it exists

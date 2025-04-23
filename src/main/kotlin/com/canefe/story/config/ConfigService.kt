@@ -3,6 +3,7 @@ package com.canefe.story.config
 import com.canefe.story.Story
 import org.bukkit.configuration.file.FileConfiguration
 
+@Suppress("MagicNumber")
 class ConfigService(
 	private val plugin: Story,
 ) {
@@ -12,10 +13,6 @@ class ConfigService(
 	var openAIKey: String = ""
 	var aiModel: String = ""
 
-	// Format settings
-	var chatFormat: String = ""
-	var emoteFormat: String = ""
-
 	// NPC context generation lists
 	var traitList: List<String> = listOf()
 	var quirkList: List<String> = listOf()
@@ -23,17 +20,25 @@ class ConfigService(
 	var flawList: List<String> = listOf()
 	var toneList: List<String> = listOf()
 
-	// Chat enabled
+	// Conversation settings
 	var chatEnabled: Boolean = true
 	var radiantEnabled: Boolean = true
-
-	// Distance settings
 	var radiantRadius: Double = 5.0
 	var chatRadius: Double = 5.0
 	var responseDelay: Double = 2.0
+	var mythicMobsEnabled: Boolean = true
 
-	// Default values
-	var defaultContext: String = ""
+	// NPC Behavior settings
+	var headRotationDelay: Int = 2
+	var randomPathingEnabled: Boolean = true
+	var randomPathingChance: Double = 0.8
+	var scheduleEnabled: Boolean = true
+	var scheduleTaskPeriod: Int = 60 // In seconds
+	var rangeBeforeTeleport: Double = 100.0 // Distance before teleporting
+
+	// NPC Voice settings
+	var maxVoiceFiles: Int = 6
+	var soundNameSpace: String = "iamusic:npc"
 
 	init {
 		plugin.saveDefaultConfig()
@@ -50,41 +55,82 @@ class ConfigService(
 			plugin.scheduleManager.reloadSchedules()
 			plugin.npcDataManager.loadConfig()
 			plugin.locationManager.loadAllLocations()
+			plugin.questManager.loadConfig()
+			plugin.npcMessageService.load()
 		} catch (e: Exception) {
-			// We can ignore this exception
+			plugin.logger.severe("Failed to reload configuration: ${e.message}")
+		} finally {
+			plugin.logger.info("Configuration reloaded successfully.")
 		}
 	}
 
 	private fun loadConfigValues() {
-		openAIKey = config.getString("openai.apikey", "") ?: ""
+		openAIKey = config.getString("openrouter.apikey", "") ?: ""
 		aiModel =
-			config.getString("openai.aiModel", "meta-llama/llama-3.1-70b-instruct") ?: "meta-llama/llama-3.1-70b-instruct"
-		chatFormat =
-			config.getString(
-				"ai.chatFormat",
-				"\\n<%color%>%npc_name%</%color%> <gray><italic>:</italic></gray> <white>%message%</white>\\n",
-			)
-				?: "\\n<%color%>%npc_name%</%color%> <gray><italic>:</italic></gray> <white>%message%</white>\\n"
-		emoteFormat =
-			config.getString("ai.emoteFormat", "<gray><italic>\$1</italic></gray>") ?: "<gray><italic>\$1</italic></gray>"
+			config.getString("openrouter.aiModel", "meta-llama/llama-3.1-70b-instruct") ?: "meta-llama/llama-3.1-70b-instruct"
 
-		traitList = config.getStringList("ai.traits")
-		quirkList = config.getStringList("ai.quirks")
-		motivationList = config.getStringList("ai.motivations")
-		flawList = config.getStringList("ai.flaws")
-		toneList = config.getStringList("ai.tones")
+		// Conversation Settings
+		chatEnabled = config.getBoolean("conversation.chatEnabled", true)
+		radiantEnabled = config.getBoolean("conversation.radiantEnabled", true)
 
-		chatEnabled = config.getBoolean("ai.chatEnabled", true)
-		radiantEnabled = config.getBoolean("ai.radiantEnabled", true)
+		radiantRadius = config.getDouble("conversation.radiantRadius", 5.0)
+		chatRadius = config.getDouble("conversation.chatRadius", 5.0)
+		responseDelay = config.getDouble("conversation.responseDelay", 2.0)
+		mythicMobsEnabled =
+			config.getBoolean("conversation.mythicMobsEnabled", true) // MythicMobs integration enabled
 
-		radiantRadius = config.getDouble("ai.radiantRadius", 5.0)
-		chatRadius = config.getDouble("ai.chatRadius", 5.0)
-		responseDelay = config.getDouble("ai.responseDelay", 2.0)
+		// NPC Behavior Settings
+		headRotationDelay = config.getInt("npc.headRotationDelay", 2)
+		randomPathingEnabled = config.getBoolean("npc.randomPathingEnabled", true)
+		randomPathingChance = config.getDouble("npc.randomPathingChance", 0.8)
+		scheduleEnabled = config.getBoolean("npc.scheduleEnabled", true)
+		scheduleTaskPeriod = config.getInt("npc.scheduleTaskPeriod", 60)
+		rangeBeforeTeleport = config.getDouble("npc.rangeBeforeTeleport", 100.0) // Distance before teleporting
 
-		defaultContext = config.getString("ai.defaultContext", "Default context") ?: "Default context"
+		// NPC Voice settings
+		maxVoiceFiles = config.getInt("npc.maxVoiceFiles", 6)
+		soundNameSpace = config.getString("npc.soundNameSpace", "iamusic:npc") ?: "iamusic:npc"
+
+		traitList = config.getStringList("context.traits")
+		quirkList = config.getStringList("context.quirks")
+		motivationList = config.getStringList("context.motivations")
+		flawList = config.getStringList("context.flaws")
+		toneList = config.getStringList("context.tones")
 	}
 
 	fun save() {
+		// Update all in-memory values back to the config file
+		config.set("openrouter.apikey", openAIKey)
+		config.set("openrouter.aiModel", aiModel)
+
+		// Conversation settings
+		config.set("conversation.chatEnabled", chatEnabled)
+		config.set("conversation.radiantEnabled", radiantEnabled)
+		config.set("conversation.radiantRadius", radiantRadius)
+		config.set("conversation.chatRadius", chatRadius)
+		config.set("conversation.responseDelay", responseDelay)
+		config.set("conversation.mythicMobsEnabled", mythicMobsEnabled)
+
+		// NPC Behavior settings
+		config.set("npc.headRotationDelay", headRotationDelay)
+		config.set("npc.randomPathingEnabled", randomPathingEnabled)
+		config.set("npc.randomPathingChance", randomPathingChance)
+		config.set("npc.scheduleEnabled", scheduleEnabled)
+		config.set("npc.scheduleTaskPeriod", scheduleTaskPeriod)
+		config.set("npc.rangeBeforeTeleport", rangeBeforeTeleport)
+
+		// NPC Voice settings
+		config.set("npc.maxVoiceFiles", maxVoiceFiles)
+		config.set("npc.soundNameSpace", soundNameSpace)
+
+		// Context lists
+		config.set("context.traits", traitList)
+		config.set("context.quirks", quirkList)
+		config.set("context.motivations", motivationList)
+		config.set("context.flaws", flawList)
+		config.set("context.tones", toneList)
+
+		// Save the updated configuration to disk
 		plugin.saveConfig()
 	}
 }
