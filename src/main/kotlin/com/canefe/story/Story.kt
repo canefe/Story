@@ -275,7 +275,7 @@ class Story :
 			.filter { npc ->
 				npc.isSpawned &&
 					npc.entity.location.world == player.location.world &&
-					npc.entity.location.distanceSquared(player.location) <= radius
+					npc.entity.location.distanceSquared(player.location) <= radius * radius
 			}
 
 	// TODO: This method should be moved to a dedicated NPC service
@@ -291,7 +291,7 @@ class Story :
 				otherNpc.isSpawned &&
 					otherNpc != npc &&
 					otherNpc.entity.location.world == npc.entity.location.world &&
-					otherNpc.entity.location.distanceSquared(npc.entity.location) <= radius
+					otherNpc.entity.location.distanceSquared(npc.entity.location) <= radius * radius
 			}
 	}
 
