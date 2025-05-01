@@ -10,7 +10,9 @@ import java.io.File
 import java.io.IOException
 import java.time.Instant
 
-class NPCDataManager private constructor(private val plugin: Story) {
+class NPCDataManager private constructor(
+	private val plugin: Story,
+) {
 	private val npcDataCache: MutableMap<String, NPCData> = HashMap()
 	private val npcDataMigrator = NPCDataMigrator(plugin)
 
@@ -227,7 +229,6 @@ class NPCDataManager private constructor(private val plugin: Story) {
 					memorySection.set("power", memory.power)
 					memorySection.set("lastAccessed", memory.lastAccessed)
 					memorySection.set("significance", memory.significance)
-					plugin.logger.info("Saved memory ${memory.id} for NPC $npcName")
 				} catch (e: Exception) {
 					plugin.logger.severe("Failed to save memory for NPC $npcName: ${e.message}")
 					e.printStackTrace()
@@ -289,8 +290,6 @@ class NPCDataManager private constructor(private val plugin: Story) {
 		private var instance: NPCDataManager? = null
 
 		@JvmStatic
-		fun getInstance(plugin: Story): NPCDataManager {
-			return instance ?: NPCDataManager(plugin).also { instance = it }
-		}
+		fun getInstance(plugin: Story): NPCDataManager = instance ?: NPCDataManager(plugin).also { instance = it }
 	}
 }

@@ -33,25 +33,15 @@ class Conversation(
 		}
 	}
 
-	fun getNPCByName(name: String): NPC? {
-		return _npcs.find { it.name.equals(name, ignoreCase = true) }
-	}
+	fun getNPCByName(name: String): NPC? = _npcs.find { it.name.equals(name, ignoreCase = true) }
 
-	fun hasPlayer(playerUUID: UUID): Boolean {
-		return _players.contains(playerUUID)
-	}
+	fun hasPlayer(playerUUID: UUID): Boolean = _players.contains(playerUUID)
 
-	fun hasNPC(name: String): Boolean {
-		return _npcNames.contains(name)
-	}
+	fun hasNPC(name: String): Boolean = _npcNames.contains(name)
 
-	fun hasNPC(npc: NPC): Boolean {
-		return _npcs.contains(npc)
-	}
+	fun hasNPC(npc: NPC): Boolean = _npcs.contains(npc)
 
-	fun hasPlayer(player: Player): Boolean {
-		return _players.contains(player.uniqueId)
-	}
+	fun hasPlayer(player: Player): Boolean = _players.contains(player.uniqueId)
 
 	fun addNPC(npc: NPC): Boolean {
 		val npcName = npc.name
