@@ -279,7 +279,7 @@ class ConversationManager private constructor(
 
 				// Handle optional greeting message
 				if (greetingMessage != null) {
-					conversation.addPlayerMessage(player, greetingMessage)
+					addPlayerMessage(player, conversation, greetingMessage)
 				}
 
 				// Notify players
