@@ -121,7 +121,11 @@ class NPCResponseService(
 		return plugin.getAIResponse(prompts).thenApply { response ->
 			val finalResponse = response ?: "No response generated."
 			if (broadcast) {
-				plugin.npcMessageService.broadcastNPCMessage(finalResponse, npc, npcContext = npcContext)
+				plugin.npcMessageService.broadcastNPCMessage(
+					finalResponse,
+					npc,
+					npcContext = npcContext,
+				)
 			}
 			// Get the current player in conversation with this NPC, if any
 			val targetPlayer =
@@ -135,7 +139,11 @@ class NPCResponseService(
 					finalResponse,
 					targetPlayer,
 				)
-				plugin.npcActionIntentRecognizer.recognizeActionIntents(npc, finalResponse, targetPlayer)
+				plugin.npcActionIntentRecognizer.recognizeActionIntents(
+					npc,
+					finalResponse,
+					targetPlayer,
+				)
 			}
 			finalResponse
 		}
@@ -192,7 +200,9 @@ class NPCResponseService(
 			.getAIResponse(speakerSelectionPrompt)
 			.thenApply { response ->
 				val speakerSelection = response?.trim() ?: ""
-				if (speakerSelection.isNotEmpty() && conversation.npcNames.contains(speakerSelection)) {
+				if (speakerSelection.isNotEmpty() &&
+					conversation.npcNames.contains(speakerSelection)
+				) {
 					speakerSelection
 				} else {
 					conversation.npcNames[0]
@@ -212,13 +222,16 @@ class NPCResponseService(
 		target: String,
 		greetingContext: List<String>? = null,
 	): String? {
-		val prompt = "You are ${npc.name}. You've noticed $target nearby and decided to initiate a conversation. Your greeting must reflect your personality, your relationship and recent memories, especially with the target. Generate a brief greeting."
+		val prompt =
+			"You are ${npc.name}. You've noticed $target nearby and decided to initiate a conversation. Your greeting must reflect your personality, your relationship and recent memories, especially with the target. Generate a brief greeting."
 
 		val prompts: MutableList<String> = ArrayList()
 		prompts.add(prompt)
 		prompts.addAll(greetingContext ?: emptyList())
 
-		val response = generateNPCResponse(npc, listOf(prompts.joinToString(separator = "\n")), false).join()
+		val response =
+			generateNPCResponse(npc, listOf(prompts.joinToString(separator = "\n")), false)
+				.join()
 
 		return response
 	}
@@ -227,13 +240,16 @@ class NPCResponseService(
 		npc: NPC,
 		goodbyeContext: List<String>? = null,
 	): CompletableFuture<String?> {
-		val prompt = "You are ${npc.name}. You are in a conversation and it is time to say goodbye. Your goodbye must reflect your personality, your relationship and recent memories, especially with the target. Generate a brief goodbye."
+		val prompt =
+			"You are ${npc.name}. You are in a conversation and it is time to say goodbye. Your goodbye must reflect your personality, your relationship and recent memories, especially with the target. Generate a brief goodbye."
 
 		val prompts: MutableList<String> = ArrayList()
 		prompts.addAll(goodbyeContext ?: emptyList())
 		prompts.add(prompt)
 
-		val response = generateNPCResponse(npc, listOf(prompts.joinToString(separator = "\n")), true).join()
+		val response =
+			generateNPCResponse(npc, listOf(prompts.joinToString(separator = "\n")), true)
+				.join()
 
 		return CompletableFuture.completedFuture(response)
 	}
@@ -277,8 +293,10 @@ class NPCResponseService(
 
 				for (npcName in npcNames) {
 					val npcSummaryMatch =
-						Regex("(?m)^$npcName:\\s*(.*?)(?=^\\w+:|\$)", RegexOption.DOT_MATCHES_ALL)
-							.find(summaryResponse)
+						Regex(
+							"(?m)^$npcName:\\s*(.*?)(?=^\\w+:|\$)",
+							RegexOption.DOT_MATCHES_ALL,
+						).find(summaryResponse)
 							?.groupValues
 							?.getOrNull(1)
 							?.trim()
@@ -290,29 +308,44 @@ class NPCResponseService(
 							.thenAccept { significance ->
 								val memory =
 									Memory(
-										id = "conversation_summary_${System.currentTimeMillis()}_$npcName",
+										id =
+											"conversation_summary_${System.currentTimeMillis()}_$npcName",
 										content = npcSummaryMatch,
-										gameCreatedAt = plugin.timeService.getCurrentGameTime(),
-										lastAccessed = plugin.timeService.getCurrentGameTime(),
+										gameCreatedAt =
+											plugin.timeService
+												.getCurrentGameTime(),
+										lastAccessed =
+											plugin.timeService
+												.getCurrentGameTime(),
 										power = 0.85,
 										_significance = significance,
 									)
 
 								npcData.memory.add(memory)
-								plugin.relationshipManager.updateRelationshipFromMemory(memory, npcName)
+								plugin.relationshipManager.updateRelationshipFromMemory(
+									memory,
+									npcName,
+								)
 								plugin.npcDataManager.saveNPCData(npcName, npcData)
 
 								if (completedNPCs.incrementAndGet() >= pendingNPCs) {
 									future.complete(null)
 								}
 							}.exceptionally { ex ->
-								plugin.logger.warning("Error evaluating memory significance for $npcName: ${ex.message}")
+								plugin.logger.warning(
+									"Error evaluating memory significance for $npcName: ${ex.message}",
+								)
 								val memory =
 									Memory(
-										id = "conversation_summary_${System.currentTimeMillis()}_$npcName",
+										id =
+											"conversation_summary_${System.currentTimeMillis()}_$npcName",
 										content = npcSummaryMatch,
-										gameCreatedAt = plugin.timeService.getCurrentGameTime(),
-										lastAccessed = plugin.timeService.getCurrentGameTime(),
+										gameCreatedAt =
+											plugin.timeService
+												.getCurrentGameTime(),
+										lastAccessed =
+											plugin.timeService
+												.getCurrentGameTime(),
 										power = 0.85,
 										_significance = 1.0,
 									)
@@ -347,8 +380,8 @@ class NPCResponseService(
 	}
 
 	/**
-	 * Summarizes a conversation from the perspective of a single NPC.
-	 * Used when an NPC leaves an ongoing conversation.
+	 * Summarizes a conversation from the perspective of a single NPC. Used when an NPC leaves an
+	 * ongoing conversation.
 	 *
 	 * @param history The conversation history
 	 * @param npcName The name of the NPC who is leaving the conversation
@@ -405,29 +438,40 @@ class NPCResponseService(
 					.thenAccept { significance ->
 						val memory =
 							Memory(
-								id = "conversation_exit_summary_${System.currentTimeMillis()}_$npcName",
+								id =
+									"conversation_exit_summary_${System.currentTimeMillis()}_$npcName",
 								content = cleanSummary,
-								gameCreatedAt = plugin.timeService.getCurrentGameTime(),
-								lastAccessed = plugin.timeService.getCurrentGameTime(),
+								gameCreatedAt =
+									plugin.timeService.getCurrentGameTime(),
+								lastAccessed =
+									plugin.timeService.getCurrentGameTime(),
 								power = 0.85,
 								_significance = significance,
 							)
 
 						npcData.memory.add(memory)
-						plugin.relationshipManager.updateRelationshipFromMemory(memory, npcName)
+						plugin.relationshipManager.updateRelationshipFromMemory(
+							memory,
+							npcName,
+						)
 						plugin.npcDataManager.saveNPCData(npcName, npcData)
 
 						future.complete(null)
 					}.exceptionally { ex ->
-						plugin.logger.warning("Error evaluating memory significance for $npcName: ${ex.message}")
+						plugin.logger.warning(
+							"Error evaluating memory significance for $npcName: ${ex.message}",
+						)
 
 						// Create memory with default significance on error
 						val memory =
 							Memory(
-								id = "conversation_exit_summary_${System.currentTimeMillis()}_$npcName",
+								id =
+									"conversation_exit_summary_${System.currentTimeMillis()}_$npcName",
 								content = cleanSummary,
-								gameCreatedAt = plugin.timeService.getCurrentGameTime(),
-								lastAccessed = plugin.timeService.getCurrentGameTime(),
+								gameCreatedAt =
+									plugin.timeService.getCurrentGameTime(),
+								lastAccessed =
+									plugin.timeService.getCurrentGameTime(),
 								power = 0.85,
 								_significance = 1.0,
 							)
@@ -439,7 +483,9 @@ class NPCResponseService(
 						null
 					}
 			}.exceptionally { e ->
-				plugin.logger.warning("Error summarizing conversation for $npcName: ${e.message}")
+				plugin.logger.warning(
+					"Error summarizing conversation for $npcName: ${e.message}",
+				)
 				future.completeExceptionally(e)
 				null
 			}
