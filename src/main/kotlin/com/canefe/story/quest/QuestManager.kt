@@ -313,6 +313,12 @@ class QuestManager private constructor(
 				(objective.target.isEmpty() || objective.target.lowercase() == target.lowercase())
 			) {
 				val currentProgress = playerQuest.objectiveProgress.getOrDefault(i, 0)
+
+				// If the objective is already completed, skip it
+				if (currentProgress >= objective.required) {
+					continue
+				}
+
 				// Don't exceed the required amount
 				val newProgress = minOf(currentProgress + progress, objective.required)
 				playerQuest.objectiveProgress[i] = newProgress
