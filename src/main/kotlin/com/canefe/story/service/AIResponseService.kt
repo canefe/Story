@@ -15,7 +15,9 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.logging.Level
 
-class AIResponseService(private val plugin: Story) {
+class AIResponseService(
+	private val plugin: Story,
+) {
 	private val gson = Gson()
 	private val apiKey: String
 		get() = plugin.config.openAIKey
@@ -25,7 +27,8 @@ class AIResponseService(private val plugin: Story) {
 
 	// Shared HTTP client for better connection pooling
 	private val httpClient =
-		OkHttpClient.Builder()
+		OkHttpClient
+			.Builder()
 			.connectTimeout(30, TimeUnit.SECONDS)
 			.writeTimeout(30, TimeUnit.SECONDS)
 			.readTimeout(60, TimeUnit.SECONDS)
@@ -82,11 +85,13 @@ class AIResponseService(private val plugin: Story) {
 
 				// Build request
 				val body =
-					requestObject.toString()
+					requestObject
+						.toString()
 						.toRequestBody("application/json".toMediaTypeOrNull())
 
 				val request =
-					Request.Builder()
+					Request
+						.Builder()
 						.url("https://openrouter.ai/api/v1/chat/completions")
 						.addHeader("Authorization", "Bearer $apiKey")
 						.addHeader("Content-Type", "application/json")
@@ -132,15 +137,18 @@ class AIResponseService(private val plugin: Story) {
 	 * @param conversation The conversation history to send
 	 * @return A CompletableFuture with the AI response
 	 */
-	fun getAIResponseAsync(conversation: List<ConversationMessage>): CompletableFuture<String?> {
-		return CompletableFuture.supplyAsync { getAIResponse(conversation) }
-	}
+	fun getAIResponseAsync(conversation: List<ConversationMessage>): CompletableFuture<String?> =
+		CompletableFuture.supplyAsync { getAIResponse(conversation) }
 
 	// Helper method to build conversation context
 	private fun buildConversationContext(conversation: List<ConversationMessage>): String {
 		val contextBuilder = StringBuilder()
 		for (msg in conversation) {
-			contextBuilder.append(msg.role).append(": ").append(msg.content).append("\n")
+			contextBuilder
+				.append(msg.role)
+				.append(": ")
+				.append(msg.content)
+				.append("\n")
 		}
 		return contextBuilder.toString()
 	}
