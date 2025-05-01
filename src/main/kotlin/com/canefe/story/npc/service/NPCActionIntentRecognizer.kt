@@ -140,6 +140,23 @@ class NPCActionIntentRecognizer(
 		response: String,
 		targetPlayer: Player,
 	): CompletableFuture<QuestGenerationResult> {
+		// First check if player already has a quest from this NPC
+		val playerQuests = plugin.questManager.getPlayerQuests(targetPlayer.uniqueId)
+		val npcId = npc.id
+
+		// Check for existing IN_PROGRESS quests from this NPC
+		val hasExistingQuestFromNPC =
+			playerQuests.any { (questId, playerQuest) ->
+				playerQuest.status == QuestStatus.IN_PROGRESS &&
+					questId.startsWith("npc_${npcId}_quest_")
+			}
+
+		// If player already has a quest from this NPC, don't generate a new one
+		if (hasExistingQuestFromNPC) {
+			plugin.logger.info("Player ${targetPlayer.name} already has an active quest from NPC ${npc.name} (ID: ${npc.id})")
+			return CompletableFuture.completedFuture(QuestGenerationResult(false, null))
+		}
+
 		val messages = mutableListOf<ConversationMessage>()
 
 		val validCollectibles = plugin.questManager.getValidCollectibles().joinToString(", ")
