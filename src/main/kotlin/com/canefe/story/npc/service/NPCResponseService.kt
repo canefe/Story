@@ -24,7 +24,16 @@ class NPCResponseService(
 	): CompletableFuture<String> {
 		val prompts: MutableList<ConversationMessage> = ArrayList()
 
-		// Add general context
+		// Add basic roleplay instruction first
+		prompts.add(
+			ConversationMessage(
+				"system",
+				"You are roleplaying as an NPC named ${npc.name} in a Minecraft world.",
+			),
+		)
+
+		// Add general context with clear section header
+		prompts.add(ConversationMessage("system", "===GENERAL INFORMATION==="))
 		contextService.getGeneralContexts().forEach {
 			prompts.add(
 				ConversationMessage(
@@ -37,65 +46,77 @@ class NPCResponseService(
 		// Get NPC context
 		val npcContext = contextService.getOrCreateContextForNPC(npc.name)
 
-		// Add location context
+		// Add location context with clear section header
 		val location = npcContext?.location
 
 		if (location != null) {
 			prompts.add(
 				ConversationMessage(
 					"system",
-					location.getContextForPrompt(plugin.locationManager),
+					"===LOCATION INFORMATION===\n" +
+						location.getContextForPrompt(plugin.locationManager),
 				),
 			)
 		}
 
-		// Lorebook context (the knowledge this NPC has)
-		// Get the current conversation
-		plugin.conversationManager.getConversation(npc).let { conversation ->
-			// Check if the conversation is null
-			if (conversation != null) {
-				// Get the lorebook context for the current conversation
-				val lorebookContexts = plugin.conversationManager.checkAndGetLoreContexts(conversation)
-				for (lore in lorebookContexts) {
-					prompts.add(
-						ConversationMessage(
-							"system",
-							"You know following information: ${lore.loreName} - ${lore.context}",
-						),
-					)
-				}
-			}
+		// Lorebook context with clear section header
+		val lorebookContexts = mutableListOf<String>()
+		plugin.conversationManager.getConversation(npc)?.let { conversation ->
+			lorebookContexts.addAll(
+				plugin.conversationManager.checkAndGetLoreContexts(conversation).map { lore ->
+					"${lore.loreName} - ${lore.context}"
+				},
+			)
 		}
 
-		// Add the NPC context
+		if (lorebookContexts.isNotEmpty()) {
+			prompts.add(
+				ConversationMessage(
+					"system",
+					"===KNOWLEDGE===\nYou know the following information:\n" +
+						lorebookContexts.joinToString("\n\n"),
+				),
+			)
+		}
+
+		// Add the NPC context with clear section headers
 		if (npcContext != null) {
 			prompts.add(
 				ConversationMessage(
 					"system",
-					npcContext.context,
+					"===CHARACTER INFORMATION===\n" + npcContext.context,
 				),
 			)
 		}
 
-		// Finally, add NPCs memories
+		// Finally, add NPCs memories with clear section header
 		npcContext?.getMemoriesForPrompt(plugin.timeService)?.let { memories ->
 			prompts.add(
 				ConversationMessage(
 					"system",
-					memories,
+					"===MEMORY===\n" + memories,
 				),
 			)
 		}
 
-		// Add the response context (this could be either current conversation or a specific message)
+		// Add the response context with clear section header
 		if (responseContext.isNotEmpty()) {
 			prompts.add(
 				ConversationMessage(
 					"system",
-					responseContext.joinToString(separator = "\n"),
+					"===CONVERSATION CONTEXT===\n" +
+						responseContext.joinToString(separator = "\n"),
 				),
 			)
 		}
+
+		// Add specific instructions at the end for emphasis
+		prompts.add(
+			ConversationMessage(
+				"system",
+				"===INSTRUCTIONS===\nRespond in character as ${npc.name}. Keep responses concise (2-4 sentences). Never break character. Your response should reflect your personality and knowledge. Format your response without quotation marks or name prefixes.",
+			),
+		)
 
 		return plugin.getAIResponse(prompts).thenApply { response ->
 			val finalResponse = response ?: "No response generated."
