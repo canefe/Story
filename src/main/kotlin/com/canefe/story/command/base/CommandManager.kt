@@ -2,6 +2,8 @@ package com.canefe.story.command.base
 
 import com.canefe.story.Story
 import com.canefe.story.command.conversation.ConvCommand
+import com.canefe.story.command.faction.FactionCommand
+import com.canefe.story.command.faction.SettlementCommand
 import com.canefe.story.command.story.StoryCommand
 import com.canefe.story.conversation.ConversationMessage
 import com.canefe.story.npc.data.NPCData
@@ -57,6 +59,8 @@ class CommandManager(
 		// Register structured commands
 		ConvCommand(plugin).register()
 		StoryCommand(plugin).register()
+		FactionCommand(plugin, plugin.factionManager).registerCommands()
+		SettlementCommand().register()
 
 		// Register simpler commands
 		registerSimpleCommands()

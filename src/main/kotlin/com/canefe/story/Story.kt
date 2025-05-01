@@ -7,6 +7,7 @@ import com.canefe.story.config.ConfigService
 import com.canefe.story.conversation.ConversationMessage
 import com.canefe.story.conversation.radiant.RadiantConversationService
 import com.canefe.story.event.EventManager
+import com.canefe.story.faction.FactionManager
 import com.canefe.story.information.WorldInformationManager
 import com.canefe.story.location.LocationManager
 import com.canefe.story.lore.LoreBookManager
@@ -55,6 +56,8 @@ class Story :
 
 	// Services and managers
 	lateinit var audioManager: AudioManager
+
+	lateinit var factionManager: FactionManager
 
 	lateinit var typingSessionManager: TypingSessionManager
 
@@ -169,6 +172,7 @@ class Story :
 		// Initialize the time service
 		timeService = TimeService(this)
 
+		factionManager = FactionManager(this)
 		typingSessionManager = TypingSessionManager(this)
 		// Initialize the audio
 		audioManager = AudioManager(this)
