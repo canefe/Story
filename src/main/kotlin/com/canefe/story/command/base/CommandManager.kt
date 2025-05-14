@@ -557,17 +557,44 @@ class CommandManager(
 		// setcurnpc
 		CommandAPICommand("setcurnpc")
 			.withPermission("storymaker.chat.toggle")
-			.withArguments(
-				dev.jorel.commandapi.arguments
-					.TextArgument("npc"),
+			.withOptionalArguments(
+				TextArgument("npc"),
 			).withOptionalArguments(
-				dev.jorel.commandapi.arguments
-					.IntegerArgument("npc_id"),
+				IntegerArgument("npc_id"),
 			).executesPlayer(
 				PlayerCommandExecutor { player, args ->
-					val npc = args.get("npc") as String
+					val npc = args.getOptional("npc").orElse(null) as? String
 					// integer
 					val npcId = args.getOptional("npc_id").orElse(null) as? Int
+
+					// Check if NPC is in front of us first.
+					val player = player as Player
+					val target = player.getTargetEntity(15) // Get entity player is looking at within 15 blocks
+					if (target != null && CitizensAPI.getNPCRegistry().isNPC(target)) {
+						val npc = CitizensAPI.getNPCRegistry().getNPC(target)
+						plugin.playerManager.setCurrentNPC(player.uniqueId, npc.uniqueId)
+						player.sendSuccess("Current NPC set to ${npc.name}")
+						return@PlayerCommandExecutor
+					}
+
+					// If no target, check if the player provided an NPC name
+					if (npc == null) {
+						player.sendError("Please provide an NPC name.")
+						return@PlayerCommandExecutor
+					}
+
+					// If npcId is provided, check if it exists
+					if (npcId != null) {
+						val npc = CitizensAPI.getNPCRegistry().getById(npcId)
+						if (npc == null) {
+							player.sendError("NPC with ID $npcId not found.")
+							return@PlayerCommandExecutor
+						}
+						plugin.playerManager.setCurrentNPC(player.uniqueId, npc.uniqueId)
+						player.sendSuccess("Current NPC set to ${npc.name}")
+						return@PlayerCommandExecutor
+					}
+
 					// There might be multiple NPCs with the same name, if so, check player radius. If not, ask player to select one.
 					for (npc in CitizensAPI.getNPCRegistry()) {
 						if (npc.name.equals(args["npc"])) {
@@ -577,9 +604,7 @@ class CommandManager(
 							val npcLocation = npc.entity.location
 							val playerLocation = player.location
 							if (playerLocation.distance(npcLocation) <= 15) {
-								plugin.playerManager.getCurrentNPC(player.uniqueId)?.let {
-									plugin.playerManager.setCurrentNPC(player.uniqueId, npc.uniqueId)
-								}
+								plugin.playerManager.setCurrentNPC(player.uniqueId, npc.uniqueId)
 								player.sendSuccess("Current NPC set to $npc")
 								return@PlayerCommandExecutor
 							} else {
