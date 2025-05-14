@@ -59,6 +59,8 @@ class Story :
 
 	lateinit var factionManager: FactionManager
 
+	lateinit var disguiseManager: DisguiseManager
+
 	lateinit var typingSessionManager: TypingSessionManager
 
 	lateinit var npcDataManager: NPCDataManager
@@ -145,6 +147,28 @@ class Story :
 
 		// Load configuration
 		configService.reload()
+		PlaceholderContainer.STRING.addPlaceholder("disguise_name") { e ->
+			val bukkitEntity = e.entity.entity()
+
+			if (bukkitEntity !is Player) {
+				return@addPlaceholder bukkitEntity.name
+			}
+
+			if (DisguiseAPI.isDisguised(bukkitEntity)) {
+				var disguise = DisguiseAPI.getDisguise(bukkitEntity)
+
+				if (disguise.isPlayerDisguise) {
+					disguise = disguise as PlayerDisguise
+				} else {
+					val name = disguise.disguiseName
+					return@addPlaceholder name
+				}
+
+				disguise.name ?: bukkitEntity.name
+			} else {
+				bukkitEntity.name
+			}
+		}
 	}
 
 	private fun checkRequiredPlugins() {
@@ -173,6 +197,7 @@ class Story :
 		timeService = TimeService(this)
 
 		factionManager = FactionManager(this)
+		disguiseManager = DisguiseManager(this)
 		typingSessionManager = TypingSessionManager(this)
 		// Initialize the audio
 		audioManager = AudioManager(this)

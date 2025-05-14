@@ -147,11 +147,15 @@ class NPCBehaviorManager(
 
 		val entities = mutableListOf<Entity>()
 		val location = npc.entity.location
-		val nearbyEntities = location.world.getNearbyEntities(location, 10.0, 10.0, 10.0)
+		val range = plugin.config.chatRadius
+		val nearbyEntities = location.world.getNearbyEntities(location, range, range, range)
 
 		for (entity in nearbyEntities) {
 			// Only consider players and other NPCs
 			if ((entity is Player || entity.hasMetadata("NPC")) && entity != npc.entity) {
+				// Check if vanished
+				if (entity is Player && entity.hasMetadata("vanished")) continue
+
 				// Check line of sight
 				entities.add(entity)
 			}

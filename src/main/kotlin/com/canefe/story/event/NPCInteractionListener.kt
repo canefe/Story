@@ -12,6 +12,7 @@ import net.citizensnpcs.api.CitizensAPI
 import net.citizensnpcs.api.npc.NPC
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
 import org.bukkit.Bukkit
+import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
 import org.bukkit.event.player.PlayerInteractEntityEvent
@@ -30,66 +31,91 @@ class NPCInteractionListener(
 		val player = event.player
 		val message = PlainTextComponentSerializer.plainText().serialize(event.message())
 		event.isCancelled = true
-		plugin.npcMessageService.broadcastPlayerMessage(message, player)
-		// Use regex to find *whisper*, *whispers*, *whispering*
-		val isWhispering = message.matches(Regex(".*\\*whisper(s|ing)?\\*.*"))
 
-		// Skip if player has disabled NPC interactions
-		if (plugin.playerManager.isPlayerDisabled(player)) {
-			return
-		}
-
-		// Collect all nearby NPCs that player could interact with
-		val nearbyNPCs = plugin.getNearbyNPCs(player, plugin.config.chatRadius)
-
-		// Check if any nearby NPC is already in a conversation that player can join
-		val currentConversation = plugin.conversationManager.getConversation(player)
-
-		if (currentConversation != null) {
-			// Player is already in a conversation, add the message
-			plugin.conversationManager.addPlayerMessage(player, currentConversation, message)
-
-			// Check for NPCs that need to be removed from player's conversation
-			val npcsToRemove = ArrayList<NPC>()
-			for (npc in currentConversation.npcs) {
-				if (!nearbyNPCs.contains(npc) || plugin.npcManager.isNPCDisabled(npc)) {
-					npcsToRemove.add(npc)
+		// Schedule processing on the main thread to safely use getNearbyEntities
+		Bukkit.getScheduler().runTask(
+			plugin,
+			Runnable {
+				if (plugin.disguiseManager.getImitatedNPC(player) != null) {
+					// make player execute command "g"
+					player.performCommand("h $message")
+					return@Runnable
 				}
-			}
 
-			// Check for NPCs that need to be added to player's conversation
-			val npcsToAdd = ArrayList<NPC>()
-			for (npc in nearbyNPCs) {
-				if (isWhispering) {
-					if (!plugin.npcManager.isNPCDisabled(npc) && !currentConversation.npcs.contains(npc)) {
-						npcsToAdd.add(npc)
+				plugin.npcMessageService.broadcastPlayerMessage(message, player)
+
+				// Use regex to find *whisper*, *whispers*, *whispering*
+				val isWhispering = message.matches(Regex(".*\\*whisper(s|ing)?\\*.*"))
+
+				// Skip if player has disabled NPC interactions
+				if (plugin.playerManager.isPlayerDisabled(player)) {
+					return@Runnable
+				}
+
+				val chatRadius = if (isWhispering) 2.0 else plugin.config.chatRadius
+
+				// These methods are now safe because they're on the main thread
+				val nearbyNPCs = plugin.getNearbyNPCs(player, chatRadius)
+
+				val disguisedPlayers =
+					player
+						.getNearbyEntities(chatRadius, chatRadius, chatRadius)
+						.filter { plugin.disguiseManager.isDisguisedAsNPC(it) }
+						.mapNotNull { (it as? org.bukkit.entity.Player)?.let { p -> plugin.disguiseManager.getImitatedNPC(p) } }
+
+				// Combine regular NPCs with impersonated NPCs for interaction
+				val allInteractableNPCs = (nearbyNPCs + disguisedPlayers).distinct()
+
+				// Check if any nearby NPC is already in a conversation that player can join
+				val currentConversation = plugin.conversationManager.getConversation(player)
+
+				if (currentConversation != null) {
+					// Player is already in a conversation, add the message
+					plugin.conversationManager.addPlayerMessage(player, currentConversation, message)
+
+					// Check for NPCs that need to be removed from player's conversation
+					val npcsToRemove = ArrayList<NPC>()
+					for (npc in currentConversation.npcs) {
+						if (!allInteractableNPCs.contains(npc) || plugin.npcManager.isNPCDisabled(npc)) {
+							npcsToRemove.add(npc)
+						}
 					}
-				}
-			}
 
-			// Remove NPCs that are no longer nearby
-			for (npcToRemove in npcsToRemove) {
-				plugin.conversationManager.removeNPC(npcToRemove, currentConversation)
-			}
-
-			// Don't add NPCs that already were removed
-			npcsToAdd.removeAll(npcsToRemove.toSet())
-
-			// Add new NPCs to the conversation
-			for (npcToAdd in npcsToAdd) {
-				plugin.conversationManager.joinConversation(npcToAdd, currentConversation)
-			}
-		} else {
-			// Player is not in a conversation
-			// Try to join an existing conversation first
-			tryJoinExistingConversation(player, message, nearbyNPCs)
-				.thenAccept { joined ->
-					if (!joined) {
-						// If didn't join existing, start a new conversation with nearby NPCs
-						tryStartNewConversation(player, message, nearbyNPCs)
+					// Check for NPCs that need to be added to player's conversations
+					val npcsToAdd = ArrayList<NPC>()
+					for (npc in allInteractableNPCs) {
+						if (isWhispering) {
+							if (!plugin.npcManager.isNPCDisabled(npc) && !currentConversation.npcs.contains(npc)) {
+								npcsToAdd.add(npc)
+							}
+						}
 					}
+
+					// Remove NPCs that are no longer nearby
+					for (npcToRemove in npcsToRemove) {
+						plugin.conversationManager.removeNPC(npcToRemove, currentConversation)
+					}
+
+					// Don't add NPCs that already were removed
+					npcsToAdd.removeAll(npcsToRemove.toSet())
+
+					// Add new NPCs to the conversation
+					for (npcToAdd in npcsToAdd) {
+						plugin.conversationManager.joinConversation(npcToAdd, currentConversation)
+					}
+				} else {
+					// Player is not in a conversation
+					// Try to join an existing conversation first
+					tryJoinExistingConversation(player, message, allInteractableNPCs)
+						.thenAccept { joined ->
+							if (!joined) {
+								// If didn't join existing, start a new conversation with nearby NPCs
+								tryStartNewConversation(player, message, allInteractableNPCs)
+							}
+						}
 				}
-		}
+			},
+		)
 	}
 
 	/**
@@ -180,85 +206,89 @@ class NPCInteractionListener(
 		}
 
 		val player = event.player
-		val npc = CitizensAPI.getNPCRegistry().getNPC(event.rightClicked) ?: return
+		val target = event.rightClicked
 
-		// Skip if player has disabled interactions
-		if (plugin.playerManager.isPlayerDisabled(player)) {
-			plugin.playerManager.playerCurrentNPC[player.uniqueId] = npc.uniqueId
-			return
+		// Check if it's a regular NPC
+		val npc = CitizensAPI.getNPCRegistry().getNPC(target)
+
+		// If not a regular NPC, check if it's a disguised player
+		if (npc == null && plugin.disguiseManager.isDisguisedAsNPC(target)) {
+			val disguisedPlayer = target as org.bukkit.entity.Player
+			val imitatedNPC = plugin.disguiseManager.getImitatedNPC(disguisedPlayer)
+
+			if (imitatedNPC != null) {
+				// Handle the interaction as if it was with the real NPC
+				handleDirectInteraction(player, imitatedNPC)
+				event.isCancelled = true
+				return
+			}
 		}
 
-		// Check if NPC is disabled/busy
-		if (plugin.npcManager.isNPCDisabled(npc)) {
-			player.sendError("<yellow>${npc.name}</yellow> is busy.")
-			return
-		}
+		// Continue with regular NPC handling if not a disguised player
+		if (npc != null) {
+			// Skip if player has disabled interactions
+			if (plugin.playerManager.isPlayerDisabled(player)) {
+				plugin.playerManager.playerCurrentNPC[player.uniqueId] = npc.uniqueId
+				return
+			}
 
-		handleDirectInteraction(player, npc)
+			// Check if NPC is disabled/busy
+			if (plugin.npcManager.isNPCDisabled(npc)) {
+				player.sendError("<yellow>${npc.name}</yellow> is busy.")
+				return
+			}
+
+			handleDirectInteraction(player, npc)
+		}
 	}
 
 	/**
-	 * Handle a direct interaction with an NPC through right-click
+	 * Handles a direct interaction with an NPC (either real or imitated by a disguised player)
 	 */
-	private fun handleDirectInteraction(
-		player: org.bukkit.entity.Player,
+	fun handleDirectInteraction(
+		player: Player,
 		npc: NPC,
 	) {
-		// Check if player is already in a conversation
-		val existingPlayerConversation = plugin.conversationManager.getConversation(player)
+		// Save the last interacted NPC
+		plugin.playerManager.playerCurrentNPC[player.uniqueId] = npc.uniqueId
 
-		// Check if NPC is already in a conversation
-		val existingNPCConversation = plugin.conversationManager.getConversation(npc)
+		// Check if the NPC is already in a conversation
+		val existingConversation = plugin.conversationManager.getConversation(npc)
+		val playersExistingConversation = plugin.conversationManager.getConversation(player)
 
-		when {
-			// Case 1: Both in same conversation - end it
-			existingPlayerConversation != null && existingNPCConversation == existingPlayerConversation -> {
-				// End conversation with CompletableFuture handling
-				plugin.conversationManager
-					.endConversation(existingPlayerConversation)
-					.exceptionally { ex ->
-						plugin.logger.warning("Error ending conversation: ${ex.message}")
-						null
+		if (existingConversation != null) {
+			// NPC is already in a conversation, try to add player
+			if (existingConversation.players.contains(player.uniqueId)) {
+				player.sendInfo("You're already in this conversation.")
+				return
+			}
+
+			// Check if conversation is locked
+			if (plugin.conversationManager.isConversationLocked(existingConversation)) {
+				player.sendInfo("<yellow>${npc.name}</yellow> is busy in another conversation.")
+				return
+			}
+
+			// Add player to the conversation
+			plugin.conversationManager
+				.joinConversation(player, existingConversation)
+				.thenAccept { success ->
+					if (success) {
+						player.sendInfo("You joined the conversation with <yellow>${npc.name}</yellow>.")
+					} else {
+						player.sendError("Could not join the conversation.")
 					}
-				return
-			}
-
-			// Case 2: NPC in another conversation - try to join it
-			existingNPCConversation != null -> {
-				// If player is in a different conversation, end it first
-				if (existingPlayerConversation != null && existingPlayerConversation != existingNPCConversation) {
-					plugin.conversationManager
-						.endConversation(existingPlayerConversation)
-						.thenRun {
-							// Join NPC's conversation after ending player's conversation
-							Bukkit.getScheduler().runTask(
-								plugin,
-								Runnable {
-									plugin.conversationManager.joinConversation(player, existingNPCConversation)
-								},
-							)
-						}
-				} else {
-					// Join NPC's conversation
-					plugin.conversationManager.joinConversation(player, existingNPCConversation)
 				}
-				return
-			}
+		} else if (playersExistingConversation != null) {
+			// Add the new NPC to the existing conversation
+			plugin.conversationManager.joinConversation(npc, playersExistingConversation)
+		} else {
+			// Start a new conversation with this NPC
+			val npcs = ArrayList<NPC>()
+			npcs.add(npc)
 
-			// Case 3: Player in conversation, NPC not - add NPC to player conversation
-			existingPlayerConversation != null -> {
-				plugin.conversationManager.joinConversation(npc, existingPlayerConversation)
-				return
-			}
-
-			// Case 4: Neither in conversation - start new one
-			else -> {
-				val npcs = ArrayList<NPC>()
-				npcs.add(npc)
-
-				// Create the conversation
-				plugin.conversationManager.startConversation(player, npcs)
-			}
+			// Create the conversation
+			plugin.conversationManager.startConversation(player, npcs)
 		}
 	}
 
@@ -269,6 +299,9 @@ class NPCInteractionListener(
 	fun onConversationStart(event: ConversationStartEvent) {
 		// For each NPC in the conversation, stop the navigation
 		for (npc in event.npcs) {
+			if (npc.entity == null) {
+				continue // Skip if the NPC entity is null
+			}
 			if (!plugin.mythicMobConversation.isMythicMobNPC(npc.entity)) {
 				npc.navigator.cancelNavigation()
 			}

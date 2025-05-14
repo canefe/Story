@@ -177,8 +177,15 @@ class NPCMessageService(
 		Bukkit.getScheduler().runTask(
 			plugin,
 			Runnable {
+				val entity =
+					plugin.disguiseManager.isNPCBeingImpersonated(npc).let {
+						// if it is true then return the player
+						plugin.disguiseManager.getDisguisedPlayer(npc)
+					}
+						?: npc.entity
+
 				// Only send message to players who are nearby OR have permission
-				val npcLocation = npc.entity?.location ?: return@Runnable
+				val npcLocation = entity.location ?: return@Runnable
 				val disabledHearing = plugin.playerManager.disabledHearing
 
 				var playersCount = 0

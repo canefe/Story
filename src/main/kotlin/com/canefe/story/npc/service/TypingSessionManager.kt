@@ -93,12 +93,23 @@ class TypingSessionManager(
 			plugin.logger.warning("Error clearing existing hologram: ${e.message}")
 		}
 
+		val location =
+			plugin.disguiseManager
+				.isNPCBeingImpersonated(npc)
+				?.let { plugin.disguiseManager.getDisguisedPlayer(npc)?.location }
+				?: npc.entity.location
+
+		if (location == null) {
+			plugin.logger.warning("NPC location is null, cannot start typing session.")
+			return TypingSession(npc, fullText)
+		}
+
 		val session =
 			TypingSession(
 				npc = npc,
 				fullText = fullText,
 				typingSpeed = typingSpeed,
-				location = npc.entity.location,
+				location = location,
 			)
 
 		activeSessions[npc.uniqueId] = session

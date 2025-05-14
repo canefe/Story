@@ -8,22 +8,67 @@ import dev.jorel.commandapi.CommandAPICommand
 import dev.jorel.commandapi.arguments.ArgumentSuggestions
 import dev.jorel.commandapi.arguments.GreedyStringArgument
 import dev.jorel.commandapi.executors.CommandExecutor
+import dev.jorel.commandapi.executors.PlayerCommandExecutor
 import net.citizensnpcs.api.CitizensAPI
 import net.citizensnpcs.api.npc.NPC
 import org.bukkit.entity.Player
 
-class NPCCommand(private val plugin: Story) {
+class NPCCommand(
+	private val plugin: Story,
+) {
 	private val commandUtils = ScheduleCommandUtils()
 
-	fun getCommand(): CommandAPICommand {
-		return CommandAPICommand("npc")
+	fun getCommand(): CommandAPICommand =
+		CommandAPICommand("npc")
 			.withPermission("story.npc")
 			.withSubcommand(getScheduleCommand())
 			.withSubcommand(getToggleCommand())
-	}
+			.withSubcommand(getDisguiseCommand())
 
-	private fun getScheduleCommand(): CommandAPICommand {
-		return ScheduleCommand(commandUtils).getCommand()
+	private fun getScheduleCommand(): CommandAPICommand = ScheduleCommand(commandUtils).getCommand()
+
+	// disguise command
+	private fun getDisguiseCommand(): CommandAPICommand {
+		return CommandAPICommand("disguise")
+			.withPermission("story.npc.disguise")
+			.withArguments(
+				GreedyStringArgument("npc_name")
+					.replaceSuggestions(
+						ArgumentSuggestions.strings { _ ->
+							// Get all NPCs from Citizens and convert to array
+							val npcNames = ArrayList<String>()
+							CitizensAPI.getNPCRegistry().forEach { citizenNPC ->
+								npcNames.add(citizenNPC.name)
+							}
+							npcNames.toTypedArray()
+						},
+					),
+			).executesPlayer(
+				PlayerCommandExecutor { sender, args ->
+					val npcName = args.get("npc_name") as String
+					var npcEntity: NPC? = null
+
+					if (sender is Player) {
+						val nearbyNPCs = plugin.getNearbyNPCs(sender, 10.0)
+						npcEntity = nearbyNPCs.find { it.name == npcName }
+					}
+					if (npcEntity == null) {
+						npcEntity = CitizensAPI.getNPCRegistry().find { it.name == npcName }
+					}
+
+					if (npcEntity == null) {
+						sender.sendError("NPC '$npcName' not found.")
+						return@PlayerCommandExecutor
+					}
+
+					if (plugin.disguiseManager.isDisguisedAsNPC(sender)) {
+						DisguiseUtil(plugin).undisguisePlayer(sender)
+						return@PlayerCommandExecutor
+					}
+
+					DisguiseUtil(plugin).disguisePlayer(sender, npcEntity)
+				},
+			)
 	}
 
 	private fun getToggleCommand(): CommandAPICommand {
@@ -42,8 +87,7 @@ class NPCCommand(private val plugin: Story) {
 							npcNames.toTypedArray()
 						},
 					),
-			)
-			.executes(
+			).executes(
 				CommandExecutor { sender, args ->
 					// Implement toggle functionality here
 					// sender.sendSuccess

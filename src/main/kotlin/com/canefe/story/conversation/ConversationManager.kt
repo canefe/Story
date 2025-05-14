@@ -379,6 +379,11 @@ class ConversationManager private constructor(
 							var isNearAnyNPC = false
 
 							for (npc in conversation.npcs) {
+								if (plugin.disguiseManager.isNPCBeingImpersonated(npc)) {
+									isNearAnyNPC = true
+									break
+								}
+
 								if (!npc.isSpawned) continue
 
 								val npcLoc = npc.entity.location
@@ -573,20 +578,26 @@ class ConversationManager private constructor(
 		speakerName: String? = null,
 	) {
 		for (npc in conversation.npcs) {
-			if (npc.isSpawned && npc.entity != null) {
+			val entity = getRealEntityForNPC(npc)
+
+			if (entity != null) {
 				if (speakerName == null || speakerName == npc.name) {
-					hologramManager.showThinkingHolo(npc)
+					hologramManager.showThinkingHolo(entity)
 				} else {
-					hologramManager.showListeningHolo(npc, false)
+					hologramManager.showListeningHolo(entity, false)
 				}
 			}
 		}
 	}
 
+	/**
+	 * Clean up holograms from NPCs or disguised players
+	 */
 	fun cleanupHolograms(conversation: Conversation) {
 		for (npc in conversation.npcs) {
-			if (npc.isSpawned && npc.entity != null) {
-				hologramManager.cleanupNPCHologram(npc)
+			val entity = getRealEntityForNPC(npc)
+			if (entity != null) {
+				hologramManager.cleanupNPCHologram(entity)
 			}
 		}
 	}
@@ -651,15 +662,18 @@ class ConversationManager private constructor(
 
 	fun isInConversation(npc: NPC): Boolean = repository.getConversationByNPC(npc) != null
 
-	// NPC conversation joining methods
-	fun handleNPCJoiningConversation(
-		npc: NPC,
-		conversation: Conversation,
-		greetingMessage: String?,
-		targetPlayer: Player?,
-		npcContext: NPCContext?,
-	) {
-		// Implementation
+	/**
+	 * Gets the entity representing an NPC, accounting for disguised players
+	 */
+	fun getRealEntityForNPC(npc: NPC): Entity? {
+		// Check if someone is disguised as this NPC
+		val disguisedPlayer = plugin.disguiseManager.getDisguisedPlayer(npc)
+		if (disguisedPlayer != null) {
+			return disguisedPlayer
+		}
+
+		// Otherwise return the actual NPC entity
+		return npc.entity
 	}
 
 	fun handleNPCJoiningConversationDirectly(

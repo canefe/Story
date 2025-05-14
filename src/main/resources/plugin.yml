@@ -12,3 +12,5 @@ softdepend:
   - ReviveMe # Allows players to revive others in the game.
   - TheNewEconomy # Adds an economy system for managing in-game currency.
   - MythicMobs # Enables the creation of custom mobs and bosses.
+  - SuperVanish
+  - PremiumVanish

@@ -395,62 +395,162 @@ class CommandManager(
 				},
 			).register()
 
+		fun talkAsNPC(
+			player: Player,
+			npcUniqueId: UUID,
+			message: String,
+		) {
+			// Get Current NPC
+			var currentNPC = npcUniqueId
+
+			if (currentNPC == null) {
+				player.sendError("Please select an NPC first.")
+				throw CommandAPI.failWithString("You are not in a conversation with any NPC.")
+			}
+			// Check if NPC exists
+			val npc = CitizensAPI.getNPCRegistry().getByUniqueId(npcUniqueId)
+			if (npc == null) {
+				player.sendError("NPC not found.")
+				throw CommandAPI.failWithString("NPC not found.")
+			}
+
+			val npcName = npc.name
+			val chatRadius = plugin.config.chatRadius
+			val isImpersonated = plugin.disguiseManager.isNPCBeingImpersonated(npc)
+			val impersonator = plugin.disguiseManager.getDisguisedPlayer(npc)
+			val conversation =
+				plugin.conversationManager.getConversation(npcName) ?: run {
+					// create new conversation with nearby NPCs and players
+					var nearbyNPCs = plugin.getNearbyNPCs(npc, chatRadius)
+					var players = plugin.getNearbyPlayers(npc, chatRadius)
+
+					if (isImpersonated && impersonator != null) {
+						nearbyNPCs = plugin.getNearbyNPCs(impersonator, chatRadius)
+						players = plugin.getNearbyPlayers(impersonator, chatRadius)
+					}
+
+					// remove players that have their chat disabled
+					players = players.filterNot { plugin.playerManager.isPlayerDisabled(it) }
+
+					// Add the NPC to the list of nearby NPCs
+					nearbyNPCs = nearbyNPCs + listOf(npc)
+
+					if (!(players.isNotEmpty() || nearbyNPCs.size > 1)) {
+						player.sendError("No players or NPCs nearby to start a conversation.")
+						return
+					}
+
+					val newConversationFuture = plugin.conversationManager.startConversation(nearbyNPCs)
+
+					newConversationFuture.thenAccept { newConv ->
+						plugin.conversationManager.handleHolograms(newConv, npc.name)
+
+						for (p in players) {
+							newConv.addPlayer(p)
+						}
+					}
+
+					newConversationFuture.join()
+				}
+
+			// Show holograms for the NPCs
+			plugin.conversationManager.handleHolograms(conversation, npc.name)
+			val shouldStream = plugin.config.streamMessages
+			val npcContext =
+				plugin.npcContextGenerator.getOrCreateContextForNPC(npc.name) ?: run {
+					player.sendError("NPC context not found. Please create the NPC first.")
+					return
+				}
+
+			// based on message, use npcresponseservice to generate a response
+			val prompt = "This message is a rough version of what $npcName is meant to say. Rewrite it into a fully fleshed-out line that reflects $npcName’s personality, tone, and the context. Do not treat it as input from someone else or as dialogue to respond to. Just rephrase it as if $npcName said it properly."
+			plugin.npcResponseService.generateNPCResponse(npc, listOf(prompt), false).thenApply { response ->
+
+				if (!shouldStream) {
+					plugin.npcMessageService.broadcastNPCMessage(
+						message = response,
+						npc = npc,
+						npcContext = npcContext,
+					)
+					return@thenApply
+				}
+
+				val typingSpeed = 4
+
+				conversation.addNPCMessage(npc, response)
+
+				// First, start the typing animation
+				plugin.typingSessionManager.startTyping(
+					npc = npc,
+					fullText = response,
+					typingSpeed = typingSpeed,
+					radius = plugin.config.chatRadius,
+					messageFormat = "<npc_typing><npc_text>",
+				)
+
+				// Then use streamMessage instead of regular broadcast
+				plugin.npcMessageService.broadcastNPCStreamMessage(
+					message = response,
+					npc = npc,
+					npcContext = npcContext,
+				)
+
+				// Finally, after typing completes, send the regular message
+				val delay = (response.length / (typingSpeed * 10) + 1).toLong()
+				Bukkit.getScheduler().runTaskLater(
+					plugin,
+					Runnable {
+						// Clean up holograms
+						plugin.conversationManager.cleanupHolograms(conversation)
+						plugin.typingSessionManager.stopTyping(npc.uniqueId)
+
+						// Send the final message
+						plugin.npcMessageService.broadcastNPCMessage(
+							message = response,
+							npc = npc,
+							npcContext = npcContext,
+						)
+					},
+					delay * 20, // Convert to ticks (20 ticks = 1 second)
+				)
+			}
+		}
+
 		// g command
 		CommandAPICommand("g")
 			.withPermission("storymaker.chat.toggle")
 			.withArguments(
-				dev.jorel.commandapi.arguments
-					.GreedyStringArgument("message"),
+				GreedyStringArgument("message"),
 			).executesPlayer(
 				PlayerCommandExecutor { player, args ->
 					val message = args.get("message") as String
-					// Get Current NPC
-					val currentNPC = plugin.playerManager.getCurrentNPC(player.uniqueId)
+					var currentNPC = plugin.playerManager.getCurrentNPC(player.uniqueId)
+
 					if (currentNPC == null) {
 						player.sendError("Please select an NPC first.")
-						throw CommandAPI.failWithString("You are not in a conversation with any NPC.")
-					}
-					// Check if NPC exists
-					val npc = CitizensAPI.getNPCRegistry().getByUniqueId(currentNPC)
-					if (npc == null) {
-						player.sendError("NPC not found.")
-						throw CommandAPI.failWithString("NPC not found.")
+						return@PlayerCommandExecutor
 					}
 
-					val npcName = npc.name
+					talkAsNPC(player, currentNPC, message)
+				},
+			).register()
 
-					val conversation =
-						plugin.conversationManager.getConversation(npcName) ?: run {
-							// create new conversation with nearby NPCs and players
-							val nearbyNPCs = plugin.getNearbyNPCs(npc, plugin.config.chatRadius)
-							val players = plugin.getNearbyPlayers(npc, plugin.config.chatRadius)
-							val randomPlayer = players.random()
+		// h command
+		CommandAPICommand("h")
+			.withPermission("storymaker.chat.toggle")
+			.withArguments(
+				GreedyStringArgument("message"),
+			).executesPlayer(
+				PlayerCommandExecutor { player, args ->
+					val message = args.get("message") as String
+					val imitatedNPC = plugin.disguiseManager.getImitatedNPC(player)
 
-							val newConversation = plugin.conversationManager.startConversation(randomPlayer, nearbyNPCs)
+					if (imitatedNPC == null) {
+						player.sendError("You are not imitating any NPC.")
+						return@PlayerCommandExecutor
+					}
 
-							// add other players
-							for (p in players) {
-								if (p != randomPlayer) {
-									newConversation.addPlayer(p)
-								}
-							}
-
-							newConversation
-						}
-
-					// Show holograms for the NPCs
-					plugin.conversationManager.handleHolograms(conversation, npc.name)
-
-					Bukkit.getScheduler().runTaskLater(
-						plugin,
-						Runnable {
-							// remove hologram after a delay
-							plugin.conversationManager.cleanupNPCHologram(npc)
-
-							plugin.npcMessageService.broadcastNPCMessage(message, npc)
-						},
-						60L,
-					) // 20 ticks = 1 second
+					talkAsNPC(player, imitatedNPC.uniqueId, message)
 				},
 			).register()
 

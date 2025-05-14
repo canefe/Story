@@ -59,6 +59,7 @@ dependencies {
 	compileOnly("me.clip:placeholderapi:2.11.6")
 	compileOnly("dev.lone:api-itemsadder:4.0.9")
 	compileOnly("io.lumine:Mythic-Dist:5.6.1")
+	compileOnly("com.github.LeonMangler:SuperVanish:6.2.18-3")
 	implementation("com.github.stefvanschie.inventoryframework:IF:0.10.19")
 
 	// Local plugin dependencies

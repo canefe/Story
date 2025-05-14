@@ -6,10 +6,13 @@ import eu.decentsoftware.holograms.api.DHAPI
 import net.citizensnpcs.api.npc.NPC
 import org.bukkit.Bukkit
 import org.bukkit.Location
+import org.bukkit.entity.Entity
 import java.util.*
 import kotlin.random.Random
 
-class ConversationHologramManager(private val plugin: Story) {
+class ConversationHologramManager(
+	private val plugin: Story,
+) {
 	private val hologramTasks: MutableMap<String, Int> = HashMap()
 
 	private val activeConversations: List<Conversation>
@@ -28,14 +31,17 @@ class ConversationHologramManager(private val plugin: Story) {
 
 		if (isPluginEnabled("DecentHolograms")) {
 			try {
-				val npcPos: Location = npc.entity.location.clone().add(0.0, 2.10, 0.0)
+				val npcPos: Location =
+					npc.entity.location
+						.clone()
+						.add(0.0, 2.10, 0.0)
 				val npcUUID = npc.uniqueId.toString()
 
 				// Create and configure hologram
 				createOrUpdateHologram(npcUUID, npcPos, isThinking)
 
 				// Just set up position updates
-				setupHologramPositionUpdates(npc, npcName, npcUUID)
+				setupHologramPositionUpdates(npc)
 			} catch (e: Exception) {
 				plugin.logger.warning(
 					"Error while showing ${if (isThinking) "thinking" else "listening"} hologram: ${e.message}",
@@ -44,8 +50,37 @@ class ConversationHologramManager(private val plugin: Story) {
 		}
 	}
 
+	fun showListeningHolo(
+		entity: Entity,
+		isThinking: Boolean = false,
+	) {
+		if (!isPluginEnabled("DecentHolograms")) {
+			return
+		}
+
+		try {
+			val entityPos: Location =
+				entity.location
+					.clone()
+					.add(0.0, 2.10, 0.0)
+			val entityUUID = entity.uniqueId.toString()
+
+			createOrUpdateHologram(entityUUID, entityPos, isThinking)
+
+			setupHologramPositionUpdates(entity)
+		} catch (e: Exception) {
+			plugin.logger.warning(
+				"Error while showing ${if (isThinking) "thinking" else "listening"} hologram: ${e.message}",
+			)
+		}
+	}
+
 	fun showThinkingHolo(npc: NPC) {
 		showListeningHolo(npc, true)
+	}
+
+	fun showThinkingHolo(entity: Entity) {
+		showListeningHolo(entity, true)
 	}
 
 	// Helper methods to modularize logic
@@ -71,29 +106,61 @@ class ConversationHologramManager(private val plugin: Story) {
 		DHAPI.updateHologram(npcUUID)
 	}
 
-	private fun setupHologramPositionUpdates(
-		npc: NPC,
-		npcName: String,
-		npcUUID: String,
-	) {
+	private fun setupHologramPositionUpdates(entity: Entity) {
+		cancelExistingTask(entity.name)
+
+		val taskId =
+			Bukkit
+				.getScheduler()
+				.runTaskTimer(
+					plugin,
+					Runnable {
+						if (!entity.isInWorld) {
+							cleanupNPC(entity)
+							return@Runnable
+						}
+
+						// Update hologram position
+						val updatedPos =
+							entity.location
+								.clone()
+								.add(0.0, 2.10, 0.0)
+						DHAPI.moveHologram(DHAPI.getHologram(entity.uniqueId.toString()), updatedPos)
+					},
+					0L,
+					5L,
+				).taskId
+
+		hologramTasks[entity.name] = taskId
+	}
+
+	private fun setupHologramPositionUpdates(npc: NPC) {
+		val npcName = npc.name
+		val npcUUID = npc.uniqueId.toString()
+
 		cancelExistingTask(npcName)
 
 		val taskId =
-			Bukkit.getScheduler().runTaskTimer(
-				plugin,
-				Runnable {
-					if (!npc.isSpawned || npc.entity == null || !plugin.conversationManager.isInConversation(npc)) {
-						cleanupNPC(npc, npcName, npcUUID)
-						return@Runnable
-					}
+			Bukkit
+				.getScheduler()
+				.runTaskTimer(
+					plugin,
+					Runnable {
+						if (!npc.isSpawned || npc.entity == null || !plugin.conversationManager.isInConversation(npc)) {
+							cleanupNPC(npc)
+							return@Runnable
+						}
 
-					// Update hologram position
-					val updatedPos = npc.entity.location.clone().add(0.0, 2.10, 0.0)
-					DHAPI.moveHologram(DHAPI.getHologram(npcUUID), updatedPos)
-				},
-				0L,
-				5L,
-			).taskId
+						// Update hologram position
+						val updatedPos =
+							npc.entity.location
+								.clone()
+								.add(0.0, 2.10, 0.0)
+						DHAPI.moveHologram(DHAPI.getHologram(npcUUID), updatedPos)
+					},
+					0L,
+					5L,
+				).taskId
 
 		hologramTasks[npcName] = taskId
 	}
@@ -106,11 +173,17 @@ class ConversationHologramManager(private val plugin: Story) {
 		}
 	}
 
-	private fun cleanupNPC(
-		npc: NPC,
-		npcName: String,
-		npcUUID: String,
-	) {
+	fun cleanupNPC(entity: Entity) {
+		val uuid = entity.uniqueId.toString()
+
+		DHAPI.removeHologram(uuid)
+
+		cancelExistingTask(entity.name)
+	}
+
+	private fun cleanupNPC(npc: NPC) {
+		val npcName = npc.name
+		val npcUUID = npc.uniqueId.toString()
 		// Remove the hologram
 		DHAPI.removeHologram(npcUUID)
 
@@ -130,6 +203,14 @@ class ConversationHologramManager(private val plugin: Story) {
 
 		// Mark NPC as no longer in conversation
 		plugin.npcBehaviorManager.setNPCInConversation(npcName, false)
+	}
+
+	fun cleanupNPCHologram(entity: Entity?) {
+		if (entity == null) return
+		val entityName = entity.name
+		val taskIdToRemove = hologramTasks[entityName]
+		Bukkit.getScheduler().cancelTask(taskIdToRemove ?: -1)
+		DHAPI.removeHologram(entity.uniqueId.toString())
 	}
 
 	fun addHologramTask(
