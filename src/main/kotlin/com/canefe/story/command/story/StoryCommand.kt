@@ -5,6 +5,7 @@ import com.canefe.story.command.base.BaseCommand
 import com.canefe.story.command.story.location.LocationCommand
 import com.canefe.story.command.story.npc.NPCCommand
 import com.canefe.story.command.story.quest.QuestCommand
+import com.canefe.story.command.story.session.SessionCommand
 import com.canefe.story.util.Msg.sendRaw
 import com.canefe.story.util.Msg.sendSuccess
 import dev.jorel.commandapi.CommandAPICommand
@@ -27,11 +28,12 @@ class StoryCommand(
 					sender.sendRaw(helpMessage)
 				},
 			).withSubcommand(getLocationCommand())
-			.withSubcommand(getQuestCommand())
-			.withSubcommand(getHelpCommand())
-			.withSubcommand(getReloadCommand())
-			.withSubcommand(getNPCCommand())
-			.register()
+                        .withSubcommand(getQuestCommand())
+                        .withSubcommand(getHelpCommand())
+                        .withSubcommand(getReloadCommand())
+                        .withSubcommand(getNPCCommand())
+                        .withSubcommand(getSessionCommand())
+                        .register()
 	}
 
 	private fun listCommands(): String {
@@ -41,9 +43,10 @@ class StoryCommand(
 			<yellow>=========================</yellow>
 			<gold>/story</gold> help <gray><italic>- Show this help message</italic></gray>
 			<gold>/story</gold> reload <gray><italic>- Reload the plugin configuration</italic></gray>
-			<gold>/story</gold> location <gray><italic>- Manage locations</italic></gray>
-			<gold>/story</gold> npc <gray><italic>- Manage NPCs</italic></gray>
-			<gold>/conv</gold> list <gray><italic>- List all conversations and control panel</italic></gray>
+                        <gold>/story</gold> location <gray><italic>- Manage locations</italic></gray>
+                        <gold>/story</gold> npc <gray><italic>- Manage NPCs</italic></gray>
+                        <gold>/story</gold> session <gray><italic>- Track gameplay sessions</italic></gray>
+                        <gold>/conv</gold> list <gray><italic>- List all conversations and control panel</italic></gray>
 			""".trimIndent()
 	}
 
@@ -75,5 +78,7 @@ class StoryCommand(
 
 	private fun getQuestCommand(): CommandAPICommand = QuestCommand(plugin).getCommand()
 
-	private fun getNPCCommand(): CommandAPICommand = NPCCommand(plugin).getCommand()
+        private fun getNPCCommand(): CommandAPICommand = NPCCommand(plugin).getCommand()
+
+        private fun getSessionCommand(): CommandAPICommand = SessionCommand(plugin).getCommand()
 }

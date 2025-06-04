@@ -26,6 +26,7 @@ import com.canefe.story.player.NPCManager
 import com.canefe.story.player.PlayerManager
 import com.canefe.story.quest.QuestListener
 import com.canefe.story.quest.QuestManager
+import com.canefe.story.session.SessionManager
 import com.canefe.story.service.AIResponseService
 import com.canefe.story.util.DisguiseManager
 import com.canefe.story.util.PluginUtils
@@ -95,11 +96,12 @@ class Story :
 	lateinit var npcResponseService: NPCResponseService
 	lateinit var worldInformationManager: WorldInformationManager
 
-	lateinit var npcActionIntentRecognizer: NPCActionIntentRecognizer
+        lateinit var npcActionIntentRecognizer: NPCActionIntentRecognizer
 
-	lateinit var scheduleManager: NPCScheduleManager
-	lateinit var npcContextGenerator: NPCContextGenerator
-	lateinit var lorebookManager: LoreBookManager
+        lateinit var scheduleManager: NPCScheduleManager
+        lateinit var npcContextGenerator: NPCContextGenerator
+        lateinit var lorebookManager: LoreBookManager
+        lateinit var sessionManager: SessionManager
 
 	private lateinit var commandManager: CommandManager
 
@@ -198,7 +200,9 @@ class Story :
 
 	private fun initializeManagers() {
 		// Initialize the time service
-		timeService = TimeService(this)
+                timeService = TimeService(this)
+
+                sessionManager = SessionManager.getInstance(this)
 
 		factionManager = FactionManager(this)
 		disguiseManager = DisguiseManager(this)
@@ -244,13 +248,14 @@ class Story :
 		mythicMobConversation = MythicMobConversationIntegration(this)
 	}
 
-	override fun onDisable() {
-		logger.info("Story has been disabled.")
-		CommandAPI.onDisable()
-		scheduleManager.shutdown()
-		commandManager.onDisable()
-		eventManager.unregisterAll()
-	}
+        override fun onDisable() {
+                logger.info("Story has been disabled.")
+                CommandAPI.onDisable()
+                scheduleManager.shutdown()
+                sessionManager.shutdown()
+                commandManager.onDisable()
+                eventManager.unregisterAll()
+        }
 
 	/**
 	 * Safely stops the plugin by properly ending all ongoing conversations first
@@ -284,8 +289,10 @@ class Story :
 			// Cancel all scheduled tasks
 			conversationManager.cancelScheduledTasks()
 
-			// Shutdown scheduled tasks
-			scheduleManager.shutdown()
+                        // Shutdown scheduled tasks
+                        scheduleManager.shutdown()
+
+                        sessionManager.shutdown()
 
 			// Unregister commands
 			commandManager.onDisable()
