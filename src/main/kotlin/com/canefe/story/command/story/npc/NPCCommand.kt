@@ -4,8 +4,10 @@ import com.canefe.story.Story
 import com.canefe.story.command.story.npc.schedule.ScheduleCommand
 import com.canefe.story.command.story.npc.schedule.ScheduleCommandUtils
 import com.canefe.story.util.Msg.sendError
+import com.canefe.story.util.Msg.sendSuccess
 import dev.jorel.commandapi.CommandAPICommand
 import dev.jorel.commandapi.arguments.ArgumentSuggestions
+import dev.jorel.commandapi.arguments.DoubleArgument
 import dev.jorel.commandapi.arguments.GreedyStringArgument
 import dev.jorel.commandapi.executors.CommandExecutor
 import dev.jorel.commandapi.executors.PlayerCommandExecutor
@@ -13,17 +15,18 @@ import net.citizensnpcs.api.CitizensAPI
 import net.citizensnpcs.api.npc.NPC
 import org.bukkit.entity.Player
 
-class NPCCommand(
-	private val plugin: Story,
-) {
+class NPCCommand(private val plugin: Story) {
 	private val commandUtils = ScheduleCommandUtils()
 
-	fun getCommand(): CommandAPICommand =
-		CommandAPICommand("npc")
-			.withPermission("story.npc")
-			.withSubcommand(getScheduleCommand())
-			.withSubcommand(getToggleCommand())
-			.withSubcommand(getDisguiseCommand())
+	fun getCommand(): CommandAPICommand = CommandAPICommand("npc")
+		.withPermission("story.npc")
+		.withUsage(
+			"/story npc <schedule|toggle|disguise|scale>",
+		)
+		.withSubcommand(getScheduleCommand())
+		.withSubcommand(getToggleCommand())
+		.withSubcommand(getDisguiseCommand())
+		.withSubcommand(getScaleCommand())
 
 	private fun getScheduleCommand(): CommandAPICommand = ScheduleCommand(commandUtils).getCommand()
 
@@ -67,6 +70,29 @@ class NPCCommand(
 					}
 
 					DisguiseUtil(plugin).disguisePlayer(sender, npcEntity)
+				},
+			)
+	}
+
+	private fun getScaleCommand(): CommandAPICommand {
+		return CommandAPICommand("scale")
+			.withPermission("story.npc.scale")
+			.withArguments(DoubleArgument("scale"))
+			.executesPlayer(
+				PlayerCommandExecutor { player, args ->
+					val scale = args.get("scale") as Double
+					val player = player as Player
+					val target = player.getTargetEntity(15) // Get entity player is looking at within 15 blocks
+					if (target != null && CitizensAPI.getNPCRegistry().isNPC(target)) {
+						val npc = CitizensAPI.getNPCRegistry().getNPC(target)
+
+						if (plugin.npcManager.scaleNPC(npc, scale)) {
+							player.sendSuccess("Scaled NPC '${npc.name}' to $scale.")
+						} else {
+							player.sendError("Failed to scale NPC '${npc.name}'.")
+						}
+						return@PlayerCommandExecutor
+					}
 				},
 			)
 	}

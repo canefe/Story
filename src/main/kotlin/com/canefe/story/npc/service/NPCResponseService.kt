@@ -14,9 +14,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.max
 import kotlin.math.min
 
-class NPCResponseService(
-	private val plugin: Story,
-) {
+class NPCResponseService(private val plugin: Story) {
 	// generate get() reference to plugin.npcContextGenerator
 	private val contextService = plugin.npcContextGenerator
 
@@ -25,6 +23,7 @@ class NPCResponseService(
 		responseContext: List<String>,
 		broadcast: Boolean = true,
 		player: Player? = null,
+		rich: Boolean = false,
 	): CompletableFuture<String> {
 		val prompts: MutableList<ConversationMessage> = ArrayList()
 
@@ -58,8 +57,10 @@ class NPCResponseService(
 		val entityPos =
 			if (isPlayerCharacter) {
 				player.location
-			} else {
+			} else if (npc != null) {
 				plugin.conversationManager.getRealEntityForNPC(npc!!)?.location
+			} else {
+				return CompletableFuture.completedFuture("")
 			}
 
 		// Check if NPC is spawned to determine actual location
@@ -79,7 +80,7 @@ class NPCResponseService(
 							location.hasParent() &&
 								actualLocation.hasParent() &&
 								location.parentLocationName == actualLocation.parentLocationName
-						) ||
+							) ||
 							(!location.hasParent() && actualLocation.parentLocationName == location.name)
 
 					// Add current location information with appropriate detail level
@@ -184,7 +185,7 @@ class NPCResponseService(
 			)
 		}
 
-		return plugin.getAIResponse(prompts).thenApply { response ->
+		return plugin.getAIResponse(prompts, lowCost = !rich).thenApply { response ->
 			val finalResponse = response ?: "No response generated."
 			if (broadcast) {
 				if (npc != null) {
@@ -271,10 +272,7 @@ class NPCResponseService(
 	 * @param npc The NPC who will be responding
 	 * @return CompletableFuture<String> containing the behavioral directive
 	 */
-	fun generateBehavioralDirective(
-		conversation: Conversation,
-		npc: NPC,
-	): CompletableFuture<String> {
+	fun generateBehavioralDirective(conversation: Conversation, npc: NPC): CompletableFuture<String> {
 		// Get only the behavioral directive prompt - no need to duplicate context that generateNPCResponse already adds
 
 		val recentMessages =
@@ -282,6 +280,19 @@ class NPCResponseService(
 				.takeLast(10)
 				.map { it.content }
 				.joinToString("\n")
+
+		var relationshipContext = ""
+
+		// Add relationship context with clear section header
+		val relationships = plugin.relationshipManager.getAllRelationships(npc.name)
+		if (relationships.isNotEmpty()) {
+			relationshipContext =
+				plugin.relationshipManager.buildRelationshipContext(
+					npc.name,
+					relationships,
+					conversation,
+				)
+		}
 
 		val directivePrompt =
 			listOf(
@@ -308,6 +319,7 @@ RULES:
 
 Current conversation:
 $recentMessages
+${if (!relationshipContext.isEmpty()) "Relationships:\n$relationshipContext" else ""}
 
 Generate a behavioral directive for ${npc.name} in this exact moment.
 Respond only with the directive. No extra commentary.""",
@@ -365,7 +377,7 @@ Respond only with the directive. No extra commentary.""",
 
 		// Run this asynchronously to avoid blocking
 		plugin
-			.getAIResponse(speakerSelectionPrompt)
+			.getAIResponse(speakerSelectionPrompt, lowCost = true)
 			.thenApply { response ->
 				val speakerSelection = response?.trim() ?: ""
 				if (speakerSelection.isNotEmpty() &&
@@ -385,11 +397,7 @@ Respond only with the directive. No extra commentary.""",
 		return future
 	}
 
-	fun generateNPCGreeting(
-		npc: NPC,
-		target: String,
-		greetingContext: List<String>? = null,
-	): String? {
+	fun generateNPCGreeting(npc: NPC, target: String, greetingContext: List<String>? = null): String? {
 		val prompt =
 			"You are ${npc.name}. You've noticed $target nearby and decided to initiate a conversation. Your greeting must reflect your personality, your relationship and recent memories, especially with the target. Generate a brief greeting."
 
@@ -404,10 +412,7 @@ Respond only with the directive. No extra commentary.""",
 		return response
 	}
 
-	fun generateNPCGoodbye(
-		npc: NPC,
-		goodbyeContext: List<String>? = null,
-	): CompletableFuture<String?> {
+	fun generateNPCGoodbye(npc: NPC, goodbyeContext: List<String>? = null): CompletableFuture<String?> {
 		val prompt =
 			"You are ${npc.name}. You are in a conversation and it is time to say goodbye. Your goodbye must reflect your personality, your relationship and recent memories, especially with the target. Generate a brief goodbye."
 
@@ -515,6 +520,7 @@ Respond only with the directive. No extra commentary.""",
 	fun summarizeConversationForSingleNPC(
 		history: List<ConversationMessage>,
 		npcName: String,
+		isPlayer: Boolean = false,
 	): CompletableFuture<Void> {
 		val future = CompletableFuture<Void>()
 
@@ -525,12 +531,40 @@ Respond only with the directive. No extra commentary.""",
 		}
 
 		// Find the NPC by name
-		val npc = CitizensAPI.getNPCRegistry().firstOrNull { it.name == npcName }
+// Try to find NPC with more lenient matching
+		var npc =
+			CitizensAPI.getNPCRegistry().firstOrNull {
+				it.name.equals(npcName, ignoreCase = true) ||
+					it.name.trim().equals(npcName.trim(), ignoreCase = true)
+			}
+
+// If still null, try searching across all registries
+		if (npc == null) {
+			plugin.logger.info("Searching for NPC '$npcName' across all registries...")
+			for (registry in CitizensAPI.getNPCRegistries()) {
+				registry.forEach {
+					if (it.name.equals(npcName, ignoreCase = true) ||
+						it.name.trim().equals(npcName.trim(), ignoreCase = true)
+					) {
+						npc = it
+						plugin.logger.info("Found NPC '${it.name}' in registry ${registry.name}")
+						return@forEach
+					}
+				}
+			}
+		}
 		val player =
 			Bukkit
 				.getOnlinePlayers()
 				.firstOrNull { EssentialsUtils.getNickname(it.name) == npcName }
 
+		// set npc to null if isPlayer is true
+		if (isPlayer) {
+			npc = null
+		}
+		if (player != null) {
+			npc = null
+		}
 		// Convert conversation history to a format suitable for responseContext
 		val conversationText =
 			history
@@ -543,16 +577,24 @@ Respond only with the directive. No extra commentary.""",
 		// Create the context for the NPC's perspective summary
 		val responseContext =
 			listOf(
+				"===SUMMARY TASK===",
+				"Create a concise memory of this event from your perspective as $npcName.",
+				"INSTRUCTIONS:",
+				"1. Focus on the content of what was said, not physical actions or gestures.",
+				"2. Capture key information exchanged, promises made, and relationship developments.",
+				"3. Include your emotional response and thoughts about what was discussed.",
+				"4. Maintain your character's voice and perspective throughout.",
+				"5. Include mentions of specific people, places, or plans discussed.",
+				"6. Omit stage directions like *gestures* or (actions) that were merely for roleplay.",
+				"FORMAT:",
+				"Write in first person, past tense, as a personal memory.",
+				"Keep it focused on what was meaningful to you as $npcName.",
+				"Be concise but include all critical information (100-150 words maximum).",
 				"===EVENT===\n$conversationText",
-				"Summarize this event from your perspective only.",
-				"Create a concise summary of what happened in this event and what you learned or felt about it.",
-				"Focus only on your experience and perspective, not other participants.",
-				"Keep the tone consistent with how you would naturally reflect on this interaction.",
-				"Be concise and insightful.",
 			)
 
 		// Use generateNPCResponse which already handles memory integration
-		generateNPCResponse(npc, responseContext, false, player)
+		generateNPCResponse(npc, responseContext, false, player, rich = true)
 			.thenAccept { summaryResponse ->
 				if (summaryResponse.isNullOrEmpty()) {
 					plugin.logger.warning("Failed to get summary response for $npcName")
@@ -638,7 +680,7 @@ Respond only with the directive. No extra commentary.""",
 
 		prompt.add(ConversationMessage("user", memoryContent))
 
-		return plugin.getAIResponse(prompt).thenApply { response ->
+		return plugin.getAIResponse(prompt, lowCost = true).thenApply { response ->
 			val significanceValue = response?.trim()?.toDoubleOrNull() ?: 1.0
 
 			// Ensure value is within valid range
@@ -653,11 +695,7 @@ Respond only with the directive. No extra commentary.""",
 	 * @param context The context for the memory
 	 * @return CompletableFuture<Memory?> that completes with the created memory or null if faileds
 	 */
-	fun generateNPCMemory(
-		npcName: String,
-		type: String,
-		context: String,
-	): CompletableFuture<Memory?> {
+	fun generateNPCMemory(npcName: String, type: String, context: String): CompletableFuture<Memory?> {
 		val future = CompletableFuture<Memory?>()
 
 		// Check if NPC exists

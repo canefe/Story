@@ -31,6 +31,8 @@ repositories {
 	maven("https://repo.md-5.net/content/groups/public/")
 	maven("https://repo.extendedclip.com/releases/")
 	maven("https://maven.devs.beer/")
+	maven { url = uri("https://repo.codemc.io/repository/maven-releases/") }
+	maven { url = uri("https://repo.codemc.io/repository/maven-snapshots/") }
 	maven(url = "https://repo.codemc.org/repository/maven-public/")
 	maven(url = "https://mvn.lumine.io/repository/maven-public/")
 	flatDir {
@@ -51,7 +53,7 @@ dependencies {
 	compileOnly("net.citizensnpcs:citizens-main:2.0.38-SNAPSHOT")
 	compileOnly("org.mcmonkey:sentinel:2.9.1-SNAPSHOT")
 	compileOnly("net.tnemc:EconomyCore:0.1.3.5-Release-1")
-	implementation("net.kyori:adventure-api:4.17.0")
+	implementation("net.kyori:adventure-api:4.21.0")
 	implementation("dev.jorel:commandapi-bukkit-shade:10.0.0")
 	compileOnly("com.github.decentsoftware-eu:decentholograms:2.8.12")
 	compileOnly("com.github.toxicity188:BetterHealthBar3:3.5.4")
@@ -60,6 +62,7 @@ dependencies {
 	compileOnly("dev.lone:api-itemsadder:4.0.9")
 	compileOnly("io.lumine:Mythic-Dist:5.6.1")
 	compileOnly("com.github.LeonMangler:SuperVanish:6.2.18-3")
+	compileOnly("com.github.retrooper:packetevents-spigot:2.8.0")
 	implementation("com.github.stefvanschie.inventoryframework:IF:0.10.19")
 
 	// Local plugin dependencies
@@ -172,6 +175,7 @@ tasks.register<Copy>("copyToServer") {
 	}
 }
 tasks.register<Copy>("copyToProdServer") {
+	dependsOn("build")
 	dependsOn("shadowJar")
 
 	doFirst {

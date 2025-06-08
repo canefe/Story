@@ -156,7 +156,7 @@ class SettlementNPCService(
 
 		// Get AI response
 		plugin
-			.getAIResponse(messages)
+			.getAIResponse(messages, lowCost = true)
 			.thenAccept { response ->
 				if (response.isNullOrEmpty()) {
 					future.complete(null)

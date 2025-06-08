@@ -21,10 +21,12 @@ import dev.jorel.commandapi.arguments.ArgumentSuggestions
 import dev.jorel.commandapi.arguments.GreedyStringArgument
 import dev.jorel.commandapi.arguments.OfflinePlayerArgument
 import dev.jorel.commandapi.arguments.PlayerArgument
+import dev.jorel.commandapi.arguments.SafeSuggestions
 import dev.jorel.commandapi.arguments.StringArgument
 import dev.jorel.commandapi.executors.CommandExecutor
 import dev.jorel.commandapi.executors.PlayerCommandExecutor
 import net.kyori.adventure.text.Component
+import org.bukkit.Bukkit
 import org.bukkit.Material
 import org.bukkit.NamespacedKey
 import org.bukkit.OfflinePlayer
@@ -35,113 +37,191 @@ import org.bukkit.inventory.meta.BookMeta
 import org.bukkit.persistence.PersistentDataType
 import java.util.*
 
-class QuestCommand(
-	private val plugin: Story,
-) {
+class QuestCommand(private val plugin: Story) {
 	private val commandUtils = QuestCommandUtils()
 
-	fun getCommand(): CommandAPICommand =
-		CommandAPICommand("quest")
-			.withAliases("quests", "q")
-			.withPermission("story.quest")
-			.executesPlayer(
-				PlayerCommandExecutor { player, args ->
+	fun getCommand(): CommandAPICommand = CommandAPICommand("quest")
+		.withAliases("quests", "q")
+		.withPermission("story.quest")
+		.withUsage(
+			"/story quest <list>",
+			"/story quest <info> <quest_id>",
+			"/story quest <assign> <player> <quest_id>",
+			"/story quest <complete> <player> <quest_id>",
+			"/story quest <completeall> <player>",
+			"/story quest <progress> <player> <quest_id>",
+			"/story quest <fail> <player> <quest_id>",
+			"/story quest <view> <player>",
+			"/story quest <create> <player> <prompt>",
+			"/story quest <reset> <player> <quest_id>",
+			"/story quest <reload>",
+			"/story quest <qb> [player]",
+			"/story quest <journal> [memories|individuals] [player]",
+		)
+		.executesPlayer(
+			PlayerCommandExecutor { player, args ->
 
-					if (plugin.questManager.getPlayerQuests(player.uniqueId).isEmpty()) {
-						player.sendError("You have no quests.")
-						return@PlayerCommandExecutor
-					}
-					getQuestChestGUI(player, null)
+				if (plugin.questManager.getPlayerQuests(player.uniqueId).isEmpty()) {
+					player.sendError("You have no quests.")
+					return@PlayerCommandExecutor
+				}
+				getQuestChestGUI(player, null)
+			},
+		).withSubcommand(getListCommand())
+		.withSubcommand(getInfoCommand())
+		.withSubcommands(getBookCommand())
+		.withSubcommand(getAssignCommand())
+		.withSubcommand(getCompleteCommand())
+		.withSubcommand(getCompleteAllCommand())
+		.withSubcommand(getProgressCommand())
+		.withSubcommand(getReloadCommand())
+		.withSubcommand(getViewCommand())
+		.withSubcommand(getCreateCommand())
+		.withSubcommand(getResetCommand())
+		.withSubcommand(getQuestBookCommand())
+		.withSubcommand(getFailCommand())
+		.withSubcommand(getJournalCommand())
+
+	private fun getQuestBookCommand(): CommandAPICommand = CommandAPICommand("qb")
+		.withPermission("story.quest.book")
+		.withOptionalArguments(
+			OfflinePlayerArgument("player").replaceSafeSuggestions(
+				SafeSuggestions.suggest {
+					Bukkit.getOfflinePlayers()
+						.filter { it.hasPlayedBefore() }
+						.toTypedArray()
 				},
-			).withSubcommand(getListCommand())
-			.withSubcommand(getInfoCommand())
-			.withSubcommands(getBookCommand())
-			.withSubcommand(getAssignCommand())
-			.withSubcommand(getCompleteCommand())
-			.withSubcommand(getCompleteAllCommand())
-			.withSubcommand(getProgressCommand())
-			.withSubcommand(getReloadCommand())
-			.withSubcommand(getViewCommand())
-			.withSubcommand(getCreateCommand())
-			.withSubcommand(getResetCommand())
-			.withSubcommand(getQuestBookCommand())
+			),
+		)
+		.executesPlayer(
+			PlayerCommandExecutor { player, args ->
+				val target =
+					if (args[0] is OfflinePlayer) {
+						args[0] as OfflinePlayer
+					} else {
+						null
+					}
 
-	private fun getQuestBookCommand(): CommandAPICommand =
-		CommandAPICommand("qb")
-			.withPermission("story.quest.book")
-			.withOptionalArguments(OfflinePlayerArgument("player"))
-			.executesPlayer(
-				PlayerCommandExecutor { player, args ->
-					val target =
-						if (args[0] is OfflinePlayer) {
-							args[0] as OfflinePlayer
-						} else {
-							null
-						}
-
-					if (target != null) {
-						if (!player.hasPermission("story.quest.admin")) {
-							player.sendError("You don't have permission to create quest books for other players.")
-							return@PlayerCommandExecutor
-						}
-
-						// Give a physical quest book for the specified target player
-						val book = ItemStack(Material.WRITTEN_BOOK)
-						val meta = book.itemMeta as BookMeta
-						val targetName = EssentialsUtils.getNickname(target?.name ?: player.name)
-						meta.title(plugin.miniMessage.deserialize("$targetName's Journal"))
-						meta.author(plugin.miniMessage.deserialize("<gold>$targetName</gold>"))
-
-						// Add placeholder first page
-						val pageContent =
-							Component
-								.text()
-								.append(plugin.miniMessage.deserialize("<gold>Journal</gold>\n\n"))
-								.append(plugin.miniMessage.deserialize("<gray>Right-click to view $targetName's quests.</gray>"))
-								.build()
-						meta.addPages(pageContent)
-
-						// Store target UUID in persistent data container
-						val targetKey = NamespacedKey(plugin, "quest_book_target")
-						meta.persistentDataContainer.set(targetKey, PersistentDataType.STRING, target.uniqueId.toString())
-
-						book.itemMeta = meta
-
-						// Give the book to the player
-						if (player.inventory.addItem(book).isEmpty()) {
-							player.sendSuccess("You received $targetName's Quest Book.")
-						} else {
-							player.sendError("Your inventory is full. Cannot give you the quest book.")
-						}
-
+				if (target != null) {
+					if (!player.hasPermission("story.quest.admin")) {
+						player.sendError("You don't have permission to create quest books for other players.")
 						return@PlayerCommandExecutor
 					}
 
-					commandUtils.openQuestBook(player)
+					// Give a physical quest book for the specified target player
+					val book = ItemStack(Material.WRITTEN_BOOK)
+					val meta = book.itemMeta as BookMeta
+					val targetName = EssentialsUtils.getNickname(target?.name ?: player.name)
+					meta.title(plugin.miniMessage.deserialize("$targetName's Journal"))
+					meta.author(plugin.miniMessage.deserialize("<gold>$targetName</gold>"))
+
+					// Add placeholder first page
+					val pageContent =
+						Component
+							.text()
+							.append(plugin.miniMessage.deserialize("<gold>Journal</gold>\n\n"))
+							.append(plugin.miniMessage.deserialize("<gray>Right-click to view $targetName's quests.</gray>"))
+							.build()
+					meta.addPages(pageContent)
+
+					// Store target UUID in persistent data container
+					val targetKey = NamespacedKey(plugin, "quest_book_target")
+					meta.persistentDataContainer.set(targetKey, PersistentDataType.STRING, target.uniqueId.toString())
+
+					book.itemMeta = meta
+
+					// Give the book to the player
+					if (player.inventory.addItem(book).isEmpty()) {
+						player.sendSuccess("You received $targetName's Quest Book.")
+					} else {
+						player.sendError("Your inventory is full. Cannot give you the quest book.")
+					}
+
+					return@PlayerCommandExecutor
+				}
+
+				commandUtils.openQuestBook(player)
+			},
+		)
+
+	private fun getJournalCommand(): CommandAPICommand = CommandAPICommand("journal")
+		.withPermission("story.quest.journal")
+		.withSubcommand(
+			CommandAPICommand("memories")
+				.withPermission("story.quest.journal.memories")
+				.withOptionalArguments(
+					OfflinePlayerArgument("player").replaceSafeSuggestions(
+						SafeSuggestions.suggest {
+							Bukkit.getOfflinePlayers()
+								.filter { it.hasPlayedBefore() }
+								.toTypedArray()
+						},
+					),
+				)
+				.executesPlayer(
+					PlayerCommandExecutor { player, args ->
+						val target =
+							if (args[0] is OfflinePlayer) {
+								args[0] as OfflinePlayer
+							} else {
+								player
+							}
+
+						commandUtils.openMemoriesBook(player, target)
+					},
+				),
+		)
+		.withSubcommand(
+			CommandAPICommand("individuals")
+				.withPermission("story.quest.journal.individuals")
+				.withOptionalArguments(
+					OfflinePlayerArgument("player").replaceSafeSuggestions(
+						SafeSuggestions.suggest {
+							Bukkit.getOfflinePlayers()
+								.filter { it.hasPlayedBefore() }
+								.toTypedArray()
+						},
+					),
+				)
+				.executesPlayer(
+					PlayerCommandExecutor { player, args ->
+						val target =
+							if (args[0] is OfflinePlayer) {
+								args[0] as OfflinePlayer
+							} else {
+								player
+							}
+
+						commandUtils.openIndividualsBook(player, target)
+					},
+				),
+		)
+
+	private fun getViewCommand(): CommandAPICommand = CommandAPICommand("view")
+		.withPermission("story.quest.view")
+		.withArguments(
+			OfflinePlayerArgument("player").replaceSafeSuggestions(
+				SafeSuggestions.suggest {
+					Bukkit.getOfflinePlayers()
+						.filter { it.hasPlayedBefore() }
+						.toTypedArray()
 				},
-			)
+			).withPermission("story.quest.admin"),
+		)
+		.executesPlayer(
+			PlayerCommandExecutor { player, args ->
+				val target =
+					if (args[0] is OfflinePlayer) {
+						args[0] as OfflinePlayer
+					} else {
+						null
+					}
 
-	private fun getViewCommand(): CommandAPICommand =
-		CommandAPICommand("view")
-			.withPermission("story.quest.view")
-			.withArguments(OfflinePlayerArgument("player").withPermission("story.quest.admin"))
-			.executesPlayer(
-				PlayerCommandExecutor { player, args ->
-					val target =
-						if (args[0] is OfflinePlayer) {
-							args[0] as OfflinePlayer
-						} else {
-							null
-						}
+				getQuestChestGUI(player, target)
+			},
+		)
 
-					getQuestChestGUI(player, target)
-				},
-			)
-
-	private fun getQuestChestGUI(
-		player: Player,
-		target: OfflinePlayer? = null,
-	) {
+	private fun getQuestChestGUI(player: Player, target: OfflinePlayer? = null) {
 		// Determine which player's quests to display
 		val targetPlayer = target ?: player
 		val isAdmin = target != null && player.hasPermission("story.quest.admin")
@@ -379,143 +459,214 @@ class QuestCommand(
 			)
 	}
 
-	private fun getAssignCommand(): CommandAPICommand =
-		CommandAPICommand("assign")
-			.withPermission("story.quest.assign")
-			.withArguments(PlayerArgument("player"))
-			.withArguments(
-				StringArgument("quest_id").replaceSuggestions { info, builder ->
-					val quests = plugin.questManager.getAllQuests()
+	private fun getAssignCommand(): CommandAPICommand = CommandAPICommand("assign")
+		.withPermission("story.quest.assign")
+		.withArguments(PlayerArgument("player"))
+		.withArguments(
+			StringArgument("quest_id").replaceSuggestions { info, builder ->
+				val quests = plugin.questManager.getAllQuests()
+
+				val suggestions =
+					quests
+						.map { it.id }
+						.distinct()
+
+				suggestions.forEach {
+					builder.suggest(it)
+				}
+
+				builder.buildFuture()
+			},
+		).executes(
+			CommandExecutor { sender, args ->
+				val player = args[0] as Player
+				val questId = args[1] as String
+
+				val success = plugin.questManager.assignQuestToPlayer(player, questId)
+				if (success) {
+					val quest = plugin.questManager.getQuest(questId)
+					sender.sendSuccess("Successfully assigned quest ${quest?.title ?: questId} to ${player.name}")
+					player.sendSuccess("New quest: e${quest?.title ?: questId}")
+				} else {
+					sender.sendError("Failed to assign quest $questId to ${player.name}")
+				}
+			},
+		)
+
+	// fail
+	private fun getFailCommand(): CommandAPICommand = CommandAPICommand("fail")
+		.withPermission("story.quest.fail")
+		.withArguments(
+			OfflinePlayerArgument("player").replaceSafeSuggestions(
+				SafeSuggestions.suggest {
+					Bukkit.getOfflinePlayers()
+						.filter { it.hasPlayedBefore() }
+						.toTypedArray()
+				},
+			),
+		)
+		.withArguments(
+			StringArgument("quest_id").replaceSuggestions(
+				ArgumentSuggestions.stringsWithTooltips { info ->
+					val player = info.previousArgs.get(0) as OfflinePlayer
+					val quests = plugin.questManager.getAllQuestsOfPlayer(player.uniqueId)
 
 					val suggestions =
 						quests
-							.map { it.id }
+							.filter { it.value == QuestStatus.IN_PROGRESS }
+							.map { it.key }
 							.distinct()
 
-					suggestions.forEach {
-						builder.suggest(it)
-					}
+					val tooltips =
+						suggestions
+							.map { quest ->
+								StringTooltip.ofString(quest.id, quest.title)
+							}.toTypedArray()
 
-					builder.buildFuture()
+					tooltips
 				},
-			).executes(
-				CommandExecutor { sender, args ->
-					val player = args[0] as Player
-					val questId = args[1] as String
+			),
+		).executes(
+			CommandExecutor { sender, args ->
+				val player = args[0] as OfflinePlayer
+				val questId = args[1] as String
+				val quest = plugin.questManager.getQuest(questId) ?: run {
+					sender.sendError("Quest with ID $questId not found.")
+					return@CommandExecutor
+				}
+				if (player.isOnline) {
+					plugin.questManager.failQuest(player.player!!, quest)
+				} else {
+					plugin.questManager.failQuest(player, quest)
+				}
+				sender.sendSuccess("Quest $questId failed for ${player.name}")
+			},
+		)
 
-					val success = plugin.questManager.assignQuestToPlayer(player, questId)
-					if (success) {
-						val quest = plugin.questManager.getQuest(questId)
-						sender.sendSuccess("Successfully assigned quest ${quest?.title ?: questId} to ${player.name}")
-						player.sendSuccess("New quest: e${quest?.title ?: questId}")
-					} else {
-						sender.sendError("Failed to assign quest $questId to ${player.name}")
-					}
+	private fun getCompleteCommand(): CommandAPICommand = CommandAPICommand("complete")
+		.withPermission("story.quest.complete")
+		.withArguments(
+			OfflinePlayerArgument("player").replaceSafeSuggestions(
+				SafeSuggestions.suggest {
+					Bukkit.getOfflinePlayers()
+						.filter { it.hasPlayedBefore() }
+						.toTypedArray()
 				},
-			)
-
-	private fun getCompleteCommand(): CommandAPICommand =
-		CommandAPICommand("complete")
-			.withPermission("story.quest.complete")
-			.withArguments(OfflinePlayerArgument("player"))
-			.withArguments(
-				StringArgument("quest_id").replaceSuggestions(
-					ArgumentSuggestions.stringsWithTooltips { info ->
-						val player = info.previousArgs.get(0) as OfflinePlayer
-						val quests = plugin.questManager.getAllQuestsOfPlayer(player.uniqueId)
-
-						val suggestions =
-							quests
-								.filter { it.value != QuestStatus.COMPLETED }
-								.map { it.key }
-								.distinct()
-
-						val tooltips =
-							suggestions
-								.map { quest ->
-									StringTooltip.ofString(quest.id, quest.title)
-								}.toTypedArray()
-
-						tooltips
-					},
-				),
-			).executes(
-				CommandExecutor { sender, args ->
-					var player = args[0] as OfflinePlayer
-					val questId = args[1] as String
-
-					if (player.isOnline) {
-						plugin.questManager.completeQuest(player.player!!, questId)
-					} else {
-						plugin.questManager.completeQuest(player, questId)
-					}
-					sender.sendSuccess("Quest $questId completed for ${player.name}")
-				},
-			)
-
-	// complete all command that completes all the quests for a player
-	private fun getCompleteAllCommand(): CommandAPICommand =
-		CommandAPICommand("completeall")
-			.withPermission("story.quest.completeall")
-			.withArguments(OfflinePlayerArgument("player"))
-			.executes(
-				CommandExecutor { sender, args ->
-					val player = args[0] as OfflinePlayer
-
+			),
+		)
+		.withArguments(
+			StringArgument("quest_id").replaceSuggestions(
+				ArgumentSuggestions.stringsWithTooltips { info ->
+					val player = info.previousArgs.get(0) as OfflinePlayer
 					val quests = plugin.questManager.getAllQuestsOfPlayer(player.uniqueId)
 
-					if (player.isOnline) {
-						quests.forEach { (quest, _) ->
-							plugin.questManager.completeQuest(player.player!!, quest.id)
-						}
-					} else {
-						quests.forEach { (quest, _) ->
-							plugin.questManager.completeQuest(player, quest.id)
-						}
+					val suggestions =
+						quests
+							.filter { it.value == QuestStatus.IN_PROGRESS }
+							.map { it.key }
+							.distinct()
+
+					val tooltips =
+						suggestions
+							.map { quest ->
+								StringTooltip.ofString(quest.id, quest.title)
+							}.toTypedArray()
+
+					tooltips
+				},
+			),
+		).executes(
+			CommandExecutor { sender, args ->
+				var player = args[0] as OfflinePlayer
+				val questId = args[1] as String
+
+				if (player.isOnline) {
+					plugin.questManager.completeQuest(player.player!!, questId)
+				} else {
+					plugin.questManager.completeQuest(player, questId)
+				}
+				sender.sendSuccess("Quest $questId completed for ${player.name}")
+			},
+		)
+
+	// complete all command that completes all the quests for a player
+	private fun getCompleteAllCommand(): CommandAPICommand = CommandAPICommand("completeall")
+		.withPermission("story.quest.completeall")
+		.withArguments(
+			OfflinePlayerArgument("player").replaceSafeSuggestions(
+				SafeSuggestions.suggest {
+					Bukkit.getOfflinePlayers()
+						.filter { it.hasPlayedBefore() }
+						.toTypedArray()
+				},
+			),
+		)
+		.executes(
+			CommandExecutor { sender, args ->
+				val player = args[0] as OfflinePlayer
+
+				val quests = plugin.questManager.getAllQuestsOfPlayer(player.uniqueId)
+
+				if (player.isOnline) {
+					quests.forEach { (quest, _) ->
+						plugin.questManager.completeQuest(player.player!!, quest.id)
 					}
+				} else {
+					quests.forEach { (quest, _) ->
+						plugin.questManager.completeQuest(player, quest.id)
+					}
+				}
 
-					sender.sendSuccess("All quests completed for ${player.name}")
+				sender.sendSuccess("All quests completed for ${player.name}")
+			},
+		)
+
+	private fun getProgressCommand(): CommandAPICommand = CommandAPICommand("progress")
+		.withPermission("story.quest.progress")
+		.withArguments(
+			OfflinePlayerArgument("player").replaceSafeSuggestions(
+				SafeSuggestions.suggest {
+					Bukkit.getOfflinePlayers()
+						.filter { it.hasPlayedBefore() }
+						.toTypedArray()
 				},
-			)
+			),
+		)
+		.withArguments(
+			StringArgument("quest_id").replaceSuggestions(
+				ArgumentSuggestions.stringsWithTooltips { info ->
+					val player = info.previousArgs.get(0) as OfflinePlayer
+					val quests = plugin.questManager.getAllQuestsOfPlayer(player.uniqueId)
 
-	private fun getProgressCommand(): CommandAPICommand =
-		CommandAPICommand("progress")
-			.withPermission("story.quest.progress")
-			.withArguments(OfflinePlayerArgument("player"))
-			.withArguments(
-				StringArgument("quest_id").replaceSuggestions(
-					ArgumentSuggestions.stringsWithTooltips { info ->
-						val player = info.previousArgs.get(0) as OfflinePlayer
-						val quests = plugin.questManager.getAllQuestsOfPlayer(player.uniqueId)
+					val suggestions =
+						quests
+							.filter { it.value == QuestStatus.IN_PROGRESS }
+							.map { it.key }
+							.distinct()
 
-						val suggestions =
-							quests
-								.filter { it.value != QuestStatus.COMPLETED }
-								.map { it.key }
-								.distinct()
+					val tooltips =
+						suggestions
+							.map { quest ->
+								StringTooltip.ofString(quest.id, quest.title)
+							}.toTypedArray()
 
-						val tooltips =
-							suggestions
-								.map { quest ->
-									StringTooltip.ofString(quest.id, quest.title)
-								}.toTypedArray()
-
-						tooltips
-					},
-				),
-			).executes(
-				CommandExecutor { sender, args ->
-					val player = args[0] as Player
-					val questId = args[1] as String
-
-					plugin.questManager.updateObjectiveProgress(player, questId)
-					sender.sendSuccess("Updated progress for quest $questId for ${player.name}")
+					tooltips
 				},
-			)
+			),
+		).executes(
+			CommandExecutor { sender, args ->
+				val player = args[0] as Player
+				val questId = args[1] as String
+
+				plugin.questManager.updateObjectiveProgress(player, questId)
+				sender.sendSuccess("Updated progress for quest $questId for ${player.name}")
+			},
+		)
 
 	private fun getCreateCommand(): CommandAPICommand {
 		return CommandAPICommand("create")
 			.withPermission("story.command.quest.create")
+			.withAliases("generate")
 			.withArguments(PlayerArgument("player"))
 			.withArguments(GreedyStringArgument("prompt"))
 			.executes(
@@ -563,9 +714,44 @@ class QuestCommand(
 							"No relevant locations found for the given prompt."
 						}
 
+					// Check any NPCs mentioned in the prompt
+					val npcKeywords =
+						prompt
+							.split(" ")
+							.filter { it.length > 3 } // Only consider words with more than 3 characters
+							.distinct()
+
+					val relevantNPCs = mutableListOf<String>()
+					val npcContexts = mutableListOf<String>()
+
+					// Check if any NPC names match our keywords
+					npcKeywords.forEach { keyword ->
+						story.npcDataManager.getAllNPCNames().forEach { npcName ->
+							if (npcName.equals(keyword, ignoreCase = true)) {
+								relevantNPCs.add(npcName)
+								val npcContext = story.npcContextGenerator.getOrCreateContextForNPC(npcName)
+								val lastFewMemories = npcContext?.getMemoriesForPrompt(story.timeService, 3)
+								if (npcContext != null) {
+									npcContexts.add("$npcName's context: ${npcContext.context} ")
+									if (lastFewMemories != null && lastFewMemories.isNotEmpty()) {
+										npcContexts.add("$npcName's recent memories: $lastFewMemories")
+									}
+								}
+							}
+						}
+					}
+
+					val npcInfo =
+						if (relevantNPCs.isNotEmpty()) {
+							"Relevant NPCs found: ${relevantNPCs.joinToString(", ")}"
+						} else {
+							"No relevant NPCs found for the given prompt."
+						}
+
 					sender.sendSuccess("Generating quest based on: '$prompt'")
 					sender.sendSuccess(loreInfo)
 					sender.sendSuccess(locationInfo)
+					sender.sendSuccess(npcInfo)
 
 					// Include relevant lore and location contexts in the prompt
 					val loreContext =
@@ -612,7 +798,10 @@ class QuestCommand(
 								            "target": "NPC",
 								            "required": 1
 								        }
-								    ]
+								    ],
+									"rewards": [
+										{"type": "EXPERIENCE", "amount": 100-5000}
+									]
 								}
 
 								Valid objective types: KILL, COLLECT, TALK, EXPLORE, CRAFT, USE
@@ -632,6 +821,12 @@ class QuestCommand(
 								Use ONLY valid targets from the lists provided.
 								$loreContext
 								$locationContext
+								${if (relevantNPCs.isNotEmpty()) {
+									"Relevant NPCs found: ${relevantNPCs.joinToString(", ")}\n" +
+										npcContexts.joinToString("\n")
+								} else {
+									""
+								}}
 								""".trimIndent(),
 							),
 							ConversationMessage("user", prompt),
@@ -665,12 +860,12 @@ class QuestCommand(
 										com.canefe.story.quest.QuestObjective(
 											description = obj.description,
 											type =
-												try {
-													com.canefe.story.quest.ObjectiveType
-														.valueOf(obj.type)
-												} catch (e: Exception) {
-													com.canefe.story.quest.ObjectiveType.EXPLORE // Default if invalid
-												},
+											try {
+												com.canefe.story.quest.ObjectiveType
+													.valueOf(obj.type)
+											} catch (e: Exception) {
+												com.canefe.story.quest.ObjectiveType.EXPLORE // Default if invalid
+											},
 											target = obj.target,
 											required = obj.required.coerceAtLeast(1),
 										)
@@ -683,20 +878,26 @@ class QuestCommand(
 										title = questDetails.title,
 										description = questDetails.description,
 										type =
-											try {
-												com.canefe.story.quest.QuestType
-													.valueOf(questDetails.questType)
-											} catch (e: Exception) {
-												com.canefe.story.quest.QuestType.SIDE
-											},
+										try {
+											com.canefe.story.quest.QuestType
+												.valueOf(questDetails.questType)
+										} catch (e: Exception) {
+											com.canefe.story.quest.QuestType.SIDE
+										},
 										objectives = objectives,
 										rewards =
-											listOf(
-												com.canefe.story.quest.QuestReward(
-													com.canefe.story.quest.RewardType.EXPERIENCE,
-													100,
-												),
-											),
+										questDetails.rewards.map { reward ->
+											com.canefe.story.quest.QuestReward(
+												type =
+												try {
+													com.canefe.story.quest.RewardType
+														.valueOf(reward["type"] as String)
+												} catch (e: Exception) {
+													com.canefe.story.quest.RewardType.EXPERIENCE // Default if invalid
+												},
+												amount = (reward["amount"] as Number?)?.toInt() ?: 500,
+											)
+										},
 									)
 
 								// Register the quest
@@ -728,6 +929,7 @@ class QuestCommand(
 		val description: String = "",
 		val questType: String = "SIDE",
 		val objectives: List<ObjectiveDetail> = emptyList(),
+		val rewards: List<Map<String, Any>> = emptyList(), // Rewards can be more complex, adjust as needed
 	)
 
 	private data class ObjectiveDetail(
@@ -743,48 +945,54 @@ class QuestCommand(
 		val currentObjective: QuestObjective?,
 	)
 
-	private fun getResetCommand(): CommandAPICommand =
-		CommandAPICommand("reset")
-			.withPermission("story.quest.reset")
-			.withArguments(OfflinePlayerArgument("player"))
-			.withArguments(
-				StringArgument("quest_id").replaceSuggestions(
-					ArgumentSuggestions.stringsWithTooltips { info ->
-						val player = info.previousArgs.get(0) as OfflinePlayer
-						val quests = plugin.questManager.getAllQuestsOfPlayer(player.uniqueId)
-
-						val suggestions =
-							quests
-								.filter { it.value != QuestStatus.COMPLETED }
-								.map { it.key }
-								.distinct()
-
-						val tooltips =
-							suggestions
-								.map { quest ->
-									StringTooltip.ofString(quest.id, quest.title)
-								}.toTypedArray()
-
-						tooltips
-					},
-				),
-			).executes(
-				CommandExecutor { sender, args ->
-					val player = args[0] as Player
-					val questId = args[1] as String
-
-					plugin.questManager.resetQuest(player, questId)
-					sender.sendSuccess("Quest $questId reset for ${player.name}")
+	private fun getResetCommand(): CommandAPICommand = CommandAPICommand("reset")
+		.withPermission("story.quest.reset")
+		.withArguments(
+			OfflinePlayerArgument("player").replaceSafeSuggestions(
+				SafeSuggestions.suggest {
+					Bukkit.getOfflinePlayers()
+						.filter { it.hasPlayedBefore() }
+						.toTypedArray()
 				},
-			)
+			),
+		)
+		.withArguments(
+			StringArgument("quest_id").replaceSuggestions(
+				ArgumentSuggestions.stringsWithTooltips { info ->
+					val player = info.previousArgs.get(0) as OfflinePlayer
+					val quests = plugin.questManager.getAllQuestsOfPlayer(player.uniqueId)
 
-	private fun getReloadCommand(): CommandAPICommand =
-		CommandAPICommand("reload")
-			.withPermission("story.quest.reload")
-			.executes(
-				CommandExecutor { sender, _ ->
-					plugin.questManager.loadAllQuests()
-					sender.sendSuccess("Quests reloaded")
+					val suggestions =
+						quests
+							.filter { it.value == QuestStatus.IN_PROGRESS }
+							.map { it.key }
+							.distinct()
+
+					val tooltips =
+						suggestions
+							.map { quest ->
+								StringTooltip.ofString(quest.id, quest.title)
+							}.toTypedArray()
+
+					tooltips
 				},
-			)
+			),
+		).executes(
+			CommandExecutor { sender, args ->
+				val player = args[0] as Player
+				val questId = args[1] as String
+
+				plugin.questManager.resetQuest(player, questId)
+				sender.sendSuccess("Quest $questId reset for ${player.name}")
+			},
+		)
+
+	private fun getReloadCommand(): CommandAPICommand = CommandAPICommand("reload")
+		.withPermission("story.quest.reload")
+		.executes(
+			CommandExecutor { sender, _ ->
+				plugin.questManager.loadAllQuests()
+				sender.sendSuccess("Quests reloaded")
+			},
+		)
 }

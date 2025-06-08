@@ -12,6 +12,7 @@ import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.meta.BookMeta
 import org.json.simple.JSONObject
 import org.json.simple.parser.JSONParser
+import kotlin.text.isNotEmpty
 
 class QuestBookCommand(
 	private val commandUtils: QuestCommandUtils,
@@ -77,6 +78,42 @@ class QuestBookCommand(
 
 					player.sendSuccess(locationInfo)
 
+					// Check any NPCs mentioned in the prompt
+					val npcKeywords =
+						context
+							.split(" ")
+							.filter { it.length > 3 } // Only consider words with more than 3 characters
+							.distinct()
+
+					val relevantNPCs = mutableListOf<String>()
+					val npcContexts = mutableListOf<String>()
+
+					// Check if any NPC names match our keywords
+					npcKeywords.forEach { keyword ->
+						story.npcDataManager.getAllNPCNames().forEach { npcName ->
+							if (npcName.equals(keyword, ignoreCase = true)) {
+								relevantNPCs.add(npcName)
+								val npcContext = story.npcContextGenerator.getOrCreateContextForNPC(npcName)
+								val lastFewMemories = npcContext?.getMemoriesForPrompt(story.timeService, 3)
+								if (npcContext != null) {
+									npcContexts.add("$npcName's context: ${npcContext.context} ")
+									if (lastFewMemories != null && lastFewMemories.isNotEmpty()) {
+										npcContexts.add("$npcName's recent memories: $lastFewMemories")
+									}
+								}
+							}
+						}
+					}
+
+					val npcInfo =
+						if (relevantNPCs.isNotEmpty()) {
+							"Relevant NPCs found: ${relevantNPCs.joinToString(", ")}"
+						} else {
+							"No relevant NPCs found for the given prompt."
+						}
+
+					player.sendSuccess(npcInfo)
+
 					// Create messages for AI prompt
 					val messages =
 						mutableListOf(
@@ -92,7 +129,7 @@ class QuestBookCommand(
                         - Include relevant details from the provided context and lore
 
                         IMPORTANT: Format your response as a valid JSON object with this structure:
-                        {"title":"TWO_W0RDS_MAX_TITLE", "content": "The actual book content goes here..."}
+                        {"title":"EXAMPLE TITLE (TWO WORDS MAX)", "content": "The actual book content goes here..."}
 
                         Wrap words in <b></b> tags to make them bold.
                         Use <i></i> tags for italicized text.
@@ -102,6 +139,12 @@ class QuestBookCommand(
                         Don't add any explanations or other text outside the JSON.
                         $loreContext
 						$locationInfo
+						${if (relevantNPCs.isNotEmpty()) {
+									"Relevant NPCs found: ${relevantNPCs.joinToString(", ")}\n" +
+										npcContexts.joinToString("\n")
+								} else {
+									""
+								}}
 						""".trimIndent(),
 							),
 							ConversationMessage("user", context),

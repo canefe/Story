@@ -21,9 +21,7 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.collections.ArrayList
 import kotlin.text.toInt
 
-class NPCScheduleManager private constructor(
-	private val plugin: Story,
-) {
+class NPCScheduleManager private constructor(private val plugin: Story) {
 	val schedules = ConcurrentHashMap<String, NPCSchedule>()
 	private val scheduleFolder: File =
 		File(plugin.dataFolder, "schedules").apply {
@@ -148,6 +146,7 @@ class NPCScheduleManager private constructor(
 					}
 					val players = plugin.server.onlinePlayers
 					val gameTime = plugin.server.worlds[0].time
+					val debugMessages = plugin.config.debugMessages
 
 					// Convert to 24-hour format (0-23)
 					val hour = ((gameTime / 1000 + 6) % 24).toInt() // +6 because MC day starts at 6am
@@ -183,11 +182,14 @@ class NPCScheduleManager private constructor(
 									val nearbyPlayers =
 										plugin.getNearbyPlayers(
 											currentLocation,
-											plugin.config.rangeBeforeTeleport * 5,
+											plugin.config.rangeBeforeTeleport,
 											ignoreY = true,
 										)
 
 									if (nearbyPlayers.isEmpty()) {
+										if (debugMessages) {
+											// plugin.logger.info("NPC $npcName has no nearby players, skipping random pathing.")
+										}
 										return@filter false
 									}
 
@@ -196,11 +198,16 @@ class NPCScheduleManager private constructor(
 									val hasLocationForCurrentTime =
 										hasSchedule &&
 											schedules[npcName.lowercase()]?.getEntryForTime(hour)?.locationName?.isNotEmpty() == true
-
 									!hasSchedule || !hasLocationForCurrentTime
 								}.mapNotNull { plugin.npcDataManager.getNPC(it) }
 								.toList()
 
+						if (debugMessages) {
+							plugin.logger.info("Found ${candidateNPCs.size} candidate NPCs for random pathing at hour $hour.")
+							plugin.logger.info(
+								"Candidate NPCs: ${candidateNPCs.joinToString(", ") { it.name }}",
+							)
+						}
 						// Only process candidates that have a chance of moving
 						if (candidateNPCs.isNotEmpty()) {
 							val randomChance = plugin.config.randomPathingChance
@@ -212,10 +219,9 @@ class NPCScheduleManager private constructor(
 
 							if (plugin.config.randomPathingEnabled) {
 								// Find candidate NPCs as before
-
 								// Add eligible NPCs to the queue
 								for (npc in candidateNPCs) {
-									if (random.nextDouble() < randomChance && hasNearbyPlayers(npc)) {
+									if (random.nextDouble() < randomChance) {
 										npcMovementQueue.add(npc)
 									}
 								}
@@ -251,14 +257,24 @@ class NPCScheduleManager private constructor(
 		val currentLocation = npc.entity?.location ?: npc.getOrAddTrait(CurrentLocation::class.java).location
 
 		if (currentLocation == null) {
-			plugin.logger.warning("NPC ${npc.name} has no location, skipping.")
+			if (plugin.config.debugMessages) {
+				plugin.logger.info("NPC ${npc.name} has no current location, skipping random movement.")
+			}
 			return
 		}
 
 		if (plugin.conversationManager.isInConversation(npc)) return // Don't move NPCs in conversation
 
 		// Get story location and potential sublocations
-		val currentStoryLocation = plugin.locationManager.getLocationByPosition(currentLocation)
+		val currentStoryLocation = plugin.locationManager.getLocationByPosition(currentLocation, 200.0)
+
+		// return if no story location is found
+		if (currentStoryLocation == null) {
+			if (plugin.config.debugMessages) {
+				plugin.logger.info("NPC ${npc.name} is not in a valid story location, skipping.")
+			}
+			return
+		}
 
 		// Get candidate sublocations
 		val allSublocations =
@@ -343,7 +359,9 @@ class NPCScheduleManager private constructor(
 		val safeLocation = findNearbyGround(targetLocation, maxBlocksCheck = 3)
 		if (safeLocation != null) {
 			moveNPCToLocation(npc, safeLocation)
-			// plugin.logger.info("Moving ${npc.name} to random sublocation: ${randomSublocation.name}")
+			if (plugin.config.debugMessages) {
+				plugin.logger.info("Moving ${npc.name} to random sublocation: ${randomSublocation.name}")
+			}
 		} else {
 			moveNPCToLocation(npc, baseLocation)
 			// plugin.logger.info("No safe ground found near random position, using base location for ${npc.name}")
@@ -413,10 +431,7 @@ class NPCScheduleManager private constructor(
 		return null
 	}
 
-	private fun executeScheduleEntry(
-		npcName: String,
-		entry: ScheduleEntry,
-	) {
+	private fun executeScheduleEntry(npcName: String, entry: ScheduleEntry) {
 		// Get NPC entity through your NPC system
 		val npc = plugin.npcDataManager.getNPC(npcName) ?: return
 		val npcEntity = npc.entity ?: return
@@ -463,6 +478,9 @@ class NPCScheduleManager private constructor(
 					// Use your existing NPC movement system or teleport WITH callback for action
 					val moveCallback =
 						Runnable {
+							// Teleport to exact location just to ensure NPC is at the right spot
+							// npc.teleport(location.bukkitLocation!!, PlayerTeleportEvent.TeleportCause.PLUGIN)
+
 							// Execute action after reaching destination
 							if (entry.action != null) {
 								executeAction(npc, entry.action)
@@ -511,7 +529,7 @@ class NPCScheduleManager private constructor(
 						plugin.logger.info("Moving ${npc.name} to scheduled location: ${location.name}")
 					} else {
 						moveNPCToLocation(npc, baseLocation, moveCallback)
-						plugin.logger.info("No safe ground found near scheduled random position, using base location for ${npc.name}")
+						// plugin.logger.info("No safe ground found near scheduled random position, using base location for ${npc.name}")
 					}
 				} else {
 					// plugin.logger.info("${npc.name} is already at ${location.name}, skipping movement.")
@@ -555,33 +573,34 @@ class NPCScheduleManager private constructor(
 		}
 	}
 
-	private fun moveNPCToLocation(
-		npc: NPC,
-		location: Location,
-		callback: Runnable? = null,
-	) {
+	private fun moveNPCToLocation(npc: NPC, location: Location, callback: Runnable? = null) {
 		val range = plugin.config.rangeBeforeTeleport
-		if (!npc.isSpawned) {
-			plugin.logger.warning("NPC ${npc.name} is not spawned, cannot move.")
-			return
-		}
 
 		val nearbyPlayers = plugin.getNearbyPlayers(npc, range, ignoreY = true)
 		var shouldTeleport = nearbyPlayers.isEmpty()
 
-		if (npc.entity.location.world != location.world) {
+		val npcLocation = npc.entity?.location ?: npc.getOrAddTrait(CurrentLocation::class.java).location
+
+		if (npcLocation.world != location.world) {
 			plugin.logger.warning("NPC ${npc.name} is in a different world, cannot move.")
 			return
 		}
 
-		// If target location has players, do not teleport.
+		val debugMessages = plugin.config.debugMessages
+
+		if (debugMessages) {
+			plugin.logger.info("Moving NPC ${npc.name} to $location")
+			plugin.logger.info("Nearby players: ${nearbyPlayers.joinToString(", ") { it.name }}")
+		}
+
+		/* If target location has players, do not teleport.
 		if (shouldTeleport) {
 			val nearbyPlayersInTargetLocation = plugin.getNearbyPlayers(location, range, ignoreY = true)
 			if (nearbyPlayersInTargetLocation.isNotEmpty()) {
 				shouldTeleport = false
 			}
 		}
-
+		 */
 		// Set NPC pose to standing
 		npc.getOrAddTrait(EntityPoseTrait::class.java).pose = EntityPoseTrait.EntityPose.STANDING
 		npc.getOrAddTrait(SitTrait::class.java).setSitting(null)
@@ -598,15 +617,11 @@ class NPCScheduleManager private constructor(
 					npc.teleport(location, PlayerTeleportEvent.TeleportCause.PLUGIN)
 					callback?.run()
 				}
-			plugin.npcManager.walkToLocation(npc, location, .5, 1f, 30, callback, teleportOnFail)
+			plugin.npcManager.walkToLocation(npc, location, .5, 1f, 60, callback, teleportOnFail)
 		}
 	}
 
-	private fun moveNPCToLocation(
-		npc: NPC,
-		location: StoryLocation,
-		callback: Runnable? = null,
-	) {
+	private fun moveNPCToLocation(npc: NPC, location: StoryLocation, callback: Runnable? = null) {
 		npc.getOrAddTrait(EntityPoseTrait::class.java).pose = EntityPoseTrait.EntityPose.STANDING
 		npc.getOrAddTrait(SitTrait::class.java).setSitting(null)
 
@@ -618,31 +633,32 @@ class NPCScheduleManager private constructor(
 		moveNPCToLocation(npc, bukkitLocation, callback)
 	}
 
-	private fun executeAction(
-		npc: NPC,
-		action: String,
-	) {
+	private fun executeAction(npc: NPC, action: String) {
+		val entityPoseTrait = npc.getOrAddTrait(EntityPoseTrait::class.java)
+		val sitTrait = npc.getOrAddTrait(SitTrait::class.java)
 		// Implement actions like sitting, working, etc.
 		when (action.lowercase()) {
 			"sit" -> {
 				// Make NPC sit
-				npc.getOrAddTrait(EntityPoseTrait::class.java).pose = EntityPoseTrait.EntityPose.STANDING
-				npc.getOrAddTrait(SitTrait::class.java).setSitting(null)
-				npc.getOrAddTrait(SitTrait::class.java).setSitting(npc.entity?.location)
+				// npc.getOrAddTrait(EntityPoseTrait::class.java).pose = EntityPoseTrait.EntityPose.STANDING
+				// npc.getOrAddTrait(SitTrait::class.java).setSitting(null)
+
+				if (!sitTrait.isSitting) {
+					sitTrait.setSitting(npc.entity.location)
+				}
 			}
 			"work" -> {
 				// Make NPC perform work animation
-				npc.getOrAddTrait(EntityPoseTrait::class.java).pose = EntityPoseTrait.EntityPose.STANDING
-				npc.getOrAddTrait(SitTrait::class.java).setSitting(null)
+				sitTrait.setSitting(null) // Ensure NPC is not sitting
 			}
 			"sleep" -> {
 				// Make NPC sleep
-				npc.getOrAddTrait(EntityPoseTrait::class.java).pose = EntityPoseTrait.EntityPose.SLEEPING
+				entityPoseTrait.pose = EntityPoseTrait.EntityPose.SLEEPING
 			}
 			"idle" -> {
 				// Default idle behavior
-				npc.getOrAddTrait(EntityPoseTrait::class.java).pose = EntityPoseTrait.EntityPose.STANDING
-				npc.getOrAddTrait(SitTrait::class.java).setSitting(null)
+				entityPoseTrait.pose = EntityPoseTrait.EntityPose.STANDING
+				sitTrait.setSitting(null) // Ensure NPC is not sitting
 			}
 			else -> {
 				plugin.logger.warning("Unknown action: $action for NPC: ${npc.name}")
@@ -654,9 +670,7 @@ class NPCScheduleManager private constructor(
 		scheduleTask?.cancel()
 	}
 
-	class NPCSchedule(
-		val npcName: String,
-	) {
+	class NPCSchedule(val npcName: String) {
 		val entries: MutableList<ScheduleEntry> = ArrayList()
 
 		fun addEntry(entry: ScheduleEntry) {

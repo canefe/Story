@@ -9,22 +9,25 @@ import net.citizensnpcs.trait.RotationTrait
 import org.bukkit.Bukkit
 import org.bukkit.entity.Entity
 import org.bukkit.entity.Player
+import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.compareTo
 import kotlin.random.Random
+import kotlin.times
 
-class NPCBehaviorManager(
-	private val plugin: Story,
-) {
-	private val npcBehaviorTasks: MutableMap<String, Int> = ConcurrentHashMap()
-	private val npcLastLookTimes: MutableMap<String, Long> = ConcurrentHashMap()
-	private val npcLookIntervals: MutableMap<String, Int> = ConcurrentHashMap()
-	private val npcIdleHologramTimes: MutableMap<String, Long> = ConcurrentHashMap()
+class NPCBehaviorManager(private val plugin: Story) {
+	// Replace name-based maps with ID-based maps
+	private val npcLastLookTimes: MutableMap<Int, Long> = ConcurrentHashMap()
+	private val npcLookIntervals: MutableMap<Int, Int> = ConcurrentHashMap()
+	private val npcIdleHologramTimes: MutableMap<Int, Long> = ConcurrentHashMap()
 
-	// Track which NPCs are currently in conversation
-	private val npcsInConversation: MutableSet<String> = mutableSetOf()
+	// Add a debug counter to monitor updates
+	private var updateCounter = 0
+
+	private val npcsInConversation: MutableSet<Int> = Collections.newSetFromMap(ConcurrentHashMap<Int, Boolean>())
+	private val initializedNPCs: MutableSet<Int> = Collections.newSetFromMap(ConcurrentHashMap<Int, Boolean>())
 
 	init {
-		// Start a task to regularly update NPC behaviors for all NPCs
 		startGlobalBehaviorTask()
 	}
 
@@ -32,46 +35,86 @@ class NPCBehaviorManager(
 		Bukkit.getScheduler().runTaskTimer(
 			plugin,
 			Runnable {
-				// Update behavior for all spawned NPCs
-				CitizensAPI.getNPCRegistry().forEach { npc ->
-					if (npc.isSpawned && npc.name != null) {
-						updateNPCBehavior(npc)
+				try {
+					// Track update count for debugging
+					updateCounter++
+
+					// Every 100 updates (~5 seconds), check for NPCs that need initialization
+					if (updateCounter % 100 == 0) {
+						plugin.logger.info("NPC Behavior Manager performing periodic check")
+						reinitializeAllNPCs()
 					}
-				}
-				// We also do the same for Disguised Players
-				for (player in Bukkit.getOnlinePlayers()) {
-					if (plugin.disguiseManager.isDisguisedAsNPC(player)) {
-						showIdleHologram(player)
+
+					// Update behavior for all spawned NPCs
+					CitizensAPI.getNPCRegistry().forEach { npc ->
+						try {
+							if (npc.isSpawned && npc.entity != null) {
+								updateNPCBehavior(npc)
+							}
+						} catch (e: Exception) {
+							plugin.logger.warning("Error updating NPC behavior for NPC ID ${npc.id}: ${e.message}")
+						}
 					}
+
+					// Handle disguised players
+					for (player in Bukkit.getOnlinePlayers()) {
+						if (plugin.disguiseManager.isDisguisedAsNPC(player)) {
+							showIdleHologram(player)
+						}
+					}
+				} catch (e: Exception) {
+					plugin.logger.severe("Error in global NPC behavior task: ${e.message}")
+					e.printStackTrace()
 				}
 			},
 			0L,
 			10L,
-		) // Every half-second
+		)
+	}
+
+	private fun reinitializeAllNPCs() {
+		CitizensAPI.getNPCRegistry().forEach { npc ->
+			if (npc.isSpawned && !initializedNPCs.contains(npc.id)) {
+				// Initialize tracking data for any NPC that doesn't have it
+				initializeNPCTracking(npc)
+				initializedNPCs.add(npc.id)
+			}
+		}
+	}
+
+	private fun initializeNPCTracking(npc: NPC) {
+		val currentTime = System.currentTimeMillis()
+		val npcId = npc.id
+
+		if (!npcLastLookTimes.containsKey(npcId)) {
+			npcLastLookTimes[npcId] = currentTime
+		}
+
+		if (!npcLookIntervals.containsKey(npcId)) {
+			npcLookIntervals[npcId] = Random.nextInt(plugin.config.headRotationDelay * 1000) + 1000
+		}
+
+		if (!npcIdleHologramTimes.containsKey(npcId)) {
+			npcIdleHologramTimes[npcId] = currentTime
+		}
 	}
 
 	private fun updateNPCBehavior(npc: NPC) {
-		val npcName = npc.name ?: return
+		val npcId = npc.id
 		val currentTime = System.currentTimeMillis()
 		val headRotationDelay = plugin.config.headRotationDelay
 
-		// If NPC is in conversation, let the conversation manager handle behaviors
-		if (npcsInConversation.contains(npcName)) return
-
-		// Initialize timers if not set
-		if (!npcLastLookTimes.containsKey(npcName)) {
-			npcLastLookTimes[npcName] = currentTime
-			npcLookIntervals[npcName] = Random.nextInt(headRotationDelay * 1000) + 1000 // 2-5 seconds
-		}
+		// Initialize trackers if not set
+		initializeNPCTracking(npc)
 
 		// Check if it's time to look at something new
-		val lastLookTime = npcLastLookTimes[npcName] ?: currentTime
-		val lookInterval = npcLookIntervals[npcName] ?: 3000
+		val lastLookTime = npcLastLookTimes[npcId] ?: currentTime
+		val lookInterval = npcLookIntervals[npcId] ?: 3000
 
 		if (currentTime - lastLookTime > lookInterval) {
 			// Reset timer and set new interval
-			npcLastLookTimes[npcName] = currentTime
-			npcLookIntervals[npcName] = Random.nextInt(headRotationDelay * 1000) + 1000
+			npcLastLookTimes[npcId] = currentTime
+			npcLookIntervals[npcId] = Random.nextInt(headRotationDelay * 1000) + 1000
 
 			// Get nearby entities to potentially look at
 			val nearbyEntities = getNearbyEntities(npc)
@@ -86,7 +129,7 @@ class NPCBehaviorManager(
 									CitizensAPI.getNPCRegistry().getNPC(entity),
 									npc,
 								)
-						)
+							)
 				}
 
 			// return if npc.entity is not spawned
@@ -223,10 +266,7 @@ class NPCBehaviorManager(
 	/**
 	 * Checks if the NPC has a clear line of sight to the target entity
 	 */
-	private fun hasLineOfSight(
-		npc: NPC,
-		target: Entity,
-	): Boolean {
+	private fun hasLineOfSight(npc: NPC, target: Entity): Boolean {
 		// Citizens NPCs don't directly support hasLineOfSight
 		// We can use raycasting to check this
 
@@ -331,7 +371,7 @@ class NPCBehaviorManager(
 				) // 2 seconds
 
 				// Track when we last showed an idle hologram
-				npcIdleHologramTimes[npc.name ?: return] = System.currentTimeMillis()
+				npcIdleHologramTimes[npc.id] = System.currentTimeMillis()
 			} catch (e: Exception) {
 				plugin.logger.warning("Error showing idle hologram: ${e.message}")
 			}
@@ -339,6 +379,13 @@ class NPCBehaviorManager(
 	}
 
 	private fun showIdleHologram(player: Player) {
+		// if in conversation, do not show idle hologram
+		val impersonatedNPC = plugin.disguiseManager.getImitatedNPC(player)
+
+		if (impersonatedNPC != null && plugin.conversationManager.isInConversation(impersonatedNPC)) {
+			return
+		}
+
 		val idleActions =
 			listOf(
 				"&7&osighs",
@@ -404,38 +451,34 @@ class NPCBehaviorManager(
 		}
 	}
 
-	private fun updateIdleHolograms(
-		npc: NPC,
-		currentTime: Long,
-	) {
-		val npcName = npc.name ?: return
-		val lastIdleTime = npcIdleHologramTimes[npcName] ?: 0L
+	private fun updateIdleHolograms(npc: NPC, currentTime: Long) {
+		val npcId = npc.id
+		val lastIdleTime = npcIdleHologramTimes[npcId] ?: 0L
 
-		// Show idle holograms occasionally (every 20-40 seconds)
 		if (currentTime - lastIdleTime > Random.nextInt(20000) + 20000) {
-			if (Random.nextDouble() < 0.5) { // 50% chance to actually show it
+			if (Random.nextDouble() < 0.5) {
 				showIdleHologram(npc)
 			}
-			npcIdleHologramTimes[npcName] = currentTime
+			npcIdleHologramTimes[npcId] = currentTime
 		}
 	}
 
 	// Called when an NPC enters a conversation
-	fun setNPCInConversation(
-		npcName: String,
-		inConversation: Boolean,
-	) {
+	fun setNPCInConversation(npc: NPC, inConversation: Boolean) {
+		val npcId = npc.id
 		if (inConversation) {
-			npcsInConversation.add(npcName)
+			npcsInConversation.add(npcId)
 		} else {
-			npcsInConversation.remove(npcName)
+			npcsInConversation.remove(npcId)
 		}
 	}
 
-	fun cleanupNPC(npcName: String) {
-		npcLastLookTimes.remove(npcName)
-		npcLookIntervals.remove(npcName)
-		npcIdleHologramTimes.remove(npcName)
-		npcsInConversation.remove(npcName)
+	fun cleanupNPC(npc: NPC) {
+		val npcId = npc.id
+		npcLastLookTimes.remove(npcId)
+		npcLookIntervals.remove(npcId)
+		npcIdleHologramTimes.remove(npcId)
+		npcsInConversation.remove(npcId)
+		initializedNPCs.remove(npcId)
 	}
 }

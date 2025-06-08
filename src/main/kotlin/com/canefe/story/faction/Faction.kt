@@ -103,10 +103,7 @@ data class Faction(
 	}
 
 	// Add method to create and add a new settlement
-	fun createSettlement(
-		name: String,
-		isCapital: Boolean = false,
-	): Settlement {
+	fun createSettlement(name: String, isCapital: Boolean = false): Settlement {
 		val settlementId = "${id}_${name.lowercase().replace(" ", "_")}"
 		val settlement = Settlement(settlementId, name, isCapital)
 		settlement.factionId = id
@@ -226,11 +223,7 @@ data class Faction(
 	/**
 	 * Add a named member to the faction
 	 */
-	fun addMember(
-		id: String,
-		name: String,
-		role: String,
-	): FactionMember {
+	fun addMember(id: String, name: String, role: String): FactionMember {
 		val member = FactionMember(id, name, role)
 		namedMembers[id] = member
 		return member
@@ -251,10 +244,7 @@ data class Faction(
 	/**
 	 * Record a history entry
 	 */
-	fun addHistoryEntry(
-		title: String,
-		description: String,
-	) {
+	fun addHistoryEntry(title: String, description: String) {
 		val entry =
 			HistoryEntry(
 				Date(),
@@ -467,33 +457,31 @@ data class FactionConfig(
 	/**
 	 * Convert to serializable format
 	 */
-	fun serialize(): Map<String, Any> =
-		mapOf(
-			"workdayHours" to workdayHours,
-			"minerCount" to minerCount,
-			"minerSalary" to minerSalary,
-			"ironValue" to ironValue,
-			"coalValue" to coalValue,
-			"usePhysicalCurrency" to usePhysicalCurrency,
-			"blacklistedDenominations" to blacklistedDenominations.toList(),
-		)
+	fun serialize(): Map<String, Any> = mapOf(
+		"workdayHours" to workdayHours,
+		"minerCount" to minerCount,
+		"minerSalary" to minerSalary,
+		"ironValue" to ironValue,
+		"coalValue" to coalValue,
+		"usePhysicalCurrency" to usePhysicalCurrency,
+		"blacklistedDenominations" to blacklistedDenominations.toList(),
+	)
 
 	companion object {
 		/**
 		 * Create from serialized data
 		 */
-		fun deserialize(data: Map<String, Any?>): FactionConfig =
-			FactionConfig(
-				workdayHours = (data["workdayHours"] as? Number)?.toInt() ?: 8,
-				minerCount = (data["minerCount"] as? Number)?.toInt() ?: 20,
-				minerSalary = (data["minerSalary"] as? Number)?.toDouble() ?: 0.01,
-				ironValue = (data["ironValue"] as? Number)?.toDouble() ?: 0.10,
-				coalValue = (data["coalValue"] as? Number)?.toDouble() ?: 0.01,
-				usePhysicalCurrency = data["usePhysicalCurrency"] as? Boolean ?: true,
-				blacklistedDenominations =
-					(data["blacklistedDenominations"] as? List<Number>)?.map { it.toDouble() }?.toSet()
-						?: setOf(13.5, 1.25, 1.5, 4.5, 9.0),
-			)
+		fun deserialize(data: Map<String, Any?>): FactionConfig = FactionConfig(
+			workdayHours = (data["workdayHours"] as? Number)?.toInt() ?: 8,
+			minerCount = (data["minerCount"] as? Number)?.toInt() ?: 20,
+			minerSalary = (data["minerSalary"] as? Number)?.toDouble() ?: 0.01,
+			ironValue = (data["ironValue"] as? Number)?.toDouble() ?: 0.10,
+			coalValue = (data["coalValue"] as? Number)?.toDouble() ?: 0.01,
+			usePhysicalCurrency = data["usePhysicalCurrency"] as? Boolean ?: true,
+			blacklistedDenominations =
+			(data["blacklistedDenominations"] as? List<Number>)?.map { it.toDouble() }?.toSet()
+				?: setOf(13.5, 1.25, 1.5, 4.5, 9.0),
+		)
 	}
 }
 
@@ -512,9 +500,7 @@ data class FactionMember(
 /**
  * Enum for resource types managed by factions
  */
-enum class ResourceType(
-	val displayName: String,
-) {
+enum class ResourceType(val displayName: String) {
 	FOOD("Food"),
 	WOOD("Wood"),
 	STONE("Stone"),
@@ -525,11 +511,7 @@ enum class ResourceType(
 /**
  * Historical event in faction's timeline
  */
-data class HistoryEntry(
-	val timestamp: Date,
-	val title: String,
-	val description: String,
-) {
+data class HistoryEntry(val timestamp: Date, val title: String, val description: String) {
 	val formattedDate: String
 		get() {
 			val calendar = Calendar.getInstance()
@@ -543,23 +525,17 @@ data class HistoryEntry(
 		}
 
 	// toyamlsection
-	fun toYamlSection(): Map<String, Any> =
-		mapOf(
-			"timestamp" to timestamp.time,
-			"title" to title,
-			"description" to description,
-		)
+	fun toYamlSection(): Map<String, Any> = mapOf(
+		"timestamp" to timestamp.time,
+		"title" to title,
+		"description" to description,
+	)
 }
 
 /**
  * Data class to store chest locations persistently
  */
-data class ChestLocation(
-	val world: String,
-	val x: Int,
-	val y: Int,
-	val z: Int,
-) {
+data class ChestLocation(val world: String, val x: Int, val y: Int, val z: Int) {
 	/**
 	 * Convert location back to a chest block
 	 */
@@ -593,33 +569,30 @@ data class ChestLocation(
 	/**
 	 * Serialize for storage
 	 */
-	fun serialize(): Map<String, Any> =
-		mapOf(
-			"world" to world,
-			"x" to x,
-			"y" to y,
-			"z" to z,
-		)
+	fun serialize(): Map<String, Any> = mapOf(
+		"world" to world,
+		"x" to x,
+		"y" to y,
+		"z" to z,
+	)
 
-	fun toYamlSection(): Map<String, Any> =
-		mapOf(
-			"world" to world,
-			"x" to x,
-			"y" to y,
-			"z" to z,
-		)
+	fun toYamlSection(): Map<String, Any> = mapOf(
+		"world" to world,
+		"x" to x,
+		"y" to y,
+		"z" to z,
+	)
 
 	companion object {
 		/**
 		 * Create from a block
 		 */
-		fun fromBlock(block: Block): ChestLocation =
-			ChestLocation(
-				block.world.name,
-				block.x,
-				block.y,
-				block.z,
-			)
+		fun fromBlock(block: Block): ChestLocation = ChestLocation(
+			block.world.name,
+			block.x,
+			block.y,
+			block.z,
+		)
 
 		/**
 		 * Deserialize from stored data

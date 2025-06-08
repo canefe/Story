@@ -4,15 +4,15 @@ import com.canefe.story.Story
 import com.canefe.story.conversation.ConversationMessage
 import com.canefe.story.quest.*
 import com.canefe.story.util.EssentialsUtils
+import com.canefe.story.util.Msg.sendError
+import com.canefe.story.util.Msg.sendInfo
 import net.citizensnpcs.api.npc.NPC
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
 import org.mcmonkey.sentinel.SentinelTrait
 import java.util.concurrent.CompletableFuture
 
-class NPCActionIntentRecognizer(
-	private val plugin: Story,
-) {
+class NPCActionIntentRecognizer(private val plugin: Story) {
 	/**
 	 * Analyzes NPC response for action intents
 	 * @return ActionIntent object with detected intents and confidence scores
@@ -70,7 +70,7 @@ class NPCActionIntentRecognizer(
 		// Use the CompletableFuture API properly
 		// In NPCActionIntentRecognizer.kt - update the JSON extraction and parsing code
 		plugin
-			.getAIResponse(messages)
+			.getAIResponse(messages, lowCost = true)
 			.thenAccept { aiResponse ->
 				try {
 					if (aiResponse == null) {
@@ -186,7 +186,7 @@ class NPCActionIntentRecognizer(
         2. The objectives MUST be actions for the $playerName to complete, not actions the ${npc.name} plans to do.
         3. DO NOT include objectives about "finding out what they need" or "talking to self" or similar self-references.
         4. Quest objectives should ALWAYS be directed at the $playerName's actions, never the ${npc.name}'s internal thoughts.
-        5. If the message does not contain a clear quest assignment FROM the ${npc.name} TO the player, return isQuestGiving: false.
+        5. If the message does not contain a clear quest assignment FROM the ${npc.name} TO the player, return isQuestGiving: false. AND leave questDetails empty.
 		Quest title must be two words max.
         You MUST respond with ONLY a single JSON object and nothing else:
 		DO NOT use '_' for target name spaces. Allowed: Location Name - Not: Location_Name
@@ -199,7 +199,10 @@ class NPCActionIntentRecognizer(
                 "objectives": [
                     {"description": "Action for $playerName to complete (3-4 WORDS MAX)", "type": "EXPLORE", "target": "Location", "required": 1},
                     {"description": "Another $playerName action (3-4 WORDS MAX)", "type": "KILL", "target": "Enemy", "required": 1}
-                ]
+                ],
+				"rewards": [
+					{"type": "EXPERIENCE", "amount": 100-1000}
+				]
             }
         }
 
@@ -229,7 +232,7 @@ class NPCActionIntentRecognizer(
 
 		val resultFuture = CompletableFuture<QuestGenerationResult>()
 
-		plugin.getAIResponse(messages).thenAccept { aiResponse ->
+		plugin.getAIResponse(messages, lowCost = true).thenAccept { aiResponse ->
 			try {
 				if (aiResponse == null) {
 					resultFuture.complete(QuestGenerationResult(false, null))
@@ -253,7 +256,18 @@ class NPCActionIntentRecognizer(
 							Bukkit.getScheduler().runTask(
 								plugin,
 								Runnable {
-									createAndAssignQuest(npc, targetPlayer, jsonResponse.questDetails)
+									// first ask for permission to give quest
+									plugin.askForPermission(
+										"Following quest will be assigned to <gold>${EssentialsUtils.getNickname(
+											targetPlayer.name,
+										)}</gold>: <yellow>${jsonResponse.questDetails.title}</yellow> by <red>${npc.name}</red>. Do you want to accept it?",
+										onAccept = {
+											createAndAssignQuest(npc, targetPlayer, jsonResponse.questDetails)
+										},
+										onRefuse = {
+											plugin.logger.info("Quest from NPC ${npc.name} was refused by player ${targetPlayer.name}.")
+										},
+									)
 								},
 							)
 						} else {
@@ -279,11 +293,7 @@ class NPCActionIntentRecognizer(
 	/**
 	 * Validates that a quest is properly player-focused and not a self-task for the NPC
 	 */
-	private fun validateQuestIsPlayerFocused(
-		questDetails: QuestDetails,
-		playerName: String,
-		npcName: String,
-	): Boolean {
+	private fun validateQuestIsPlayerFocused(questDetails: QuestDetails, playerName: String, npcName: String): Boolean {
 		// Check if any objective contains references to NPC's own tasks
 		val selfReferenceKeywords =
 			listOf(
@@ -342,46 +352,58 @@ class NPCActionIntentRecognizer(
 	/**
 	 * Result class for quest generation
 	 */
-	data class QuestGenerationResult(
-		val isQuestGiving: Boolean = false,
-		val questDetails: QuestDetails? = null,
-	)
+	data class QuestGenerationResult(val isQuestGiving: Boolean = false, val questDetails: QuestDetails? = null)
 
 	/**
 	 * Updates the NPCActionIntentRecognizer to support complex item targets for quest generation
 	 */
-	private fun executeAction(
-		npc: NPC,
-		player: Player,
-		intent: ActionIntent,
-	) {
+	private fun executeAction(npc: NPC, player: Player, intent: ActionIntent) {
 		when {
 			intent.follow > 0.7 -> {
-				// Existing follow code
-				npc.getOrAddTrait(SentinelTrait::class.java).guarding = player.uniqueId
-				npc.getOrAddTrait(SentinelTrait::class.java).guardDistanceMinimum = 3.0
-				player.sendMessage("§7${npc.name} is now following you.")
+				plugin.askForPermission(
+					"Do you want <gold>${npc.name}</gold> to follow <red>${player.name}</red>?",
+					onAccept = {
+						npc.getOrAddTrait(SentinelTrait::class.java).guarding = player.uniqueId
+						npc.getOrAddTrait(SentinelTrait::class.java).guardDistanceMinimum = 3.0
+						player.sendInfo("${npc.name} is now following you.")
+					},
+					onRefuse = {},
+				)
 			}
 			intent.attack > 0.7 -> {
-				/*
 				val target = intent.target?.let { Bukkit.getPlayer(it) }
 				if (target != null) {
-					npc.getOrAddTrait(SentinelTrait::class.java).addTarget("player:${target.name}")
-					player.sendMessage("§7${npc.name} is now attacking ${target.name}.")
+					plugin.askForPermission(
+						"Do you want <gold>${npc.name}</gold> to attack <red>${target.name}</red>?",
+						onAccept = {
+							npc.getOrAddTrait(SentinelTrait::class.java).addTarget("player:${target.name}")
+							player.sendError("${npc.name} is now attacking you.")
+						},
+						onRefuse = {
+						},
+					)
 				}
-				 */
 			}
 			intent.stopFollowing > 0.7 -> {
-				// Existing stop following code
-				npc.getOrAddTrait(SentinelTrait::class.java).guarding = null
-				player.sendMessage("§7${npc.name} is no longer following you.")
+				plugin.askForPermission(
+					"Do you want <gold>${npc.name}</gold> to stop following ${player.name}?",
+					onAccept = {
+						npc.getOrAddTrait(SentinelTrait::class.java).guarding = null
+						player.sendMessage("§7${npc.name} is no longer following you.")
+					},
+					onRefuse = {},
+				)
 			}
 			intent.stopAttacking > 0.7 -> {
-				/*
-				npc.getOrAddTrait(SentinelTrait::class.java).removeTarget("player:${intent.target}")
-				npc.getOrAddTrait(SentinelTrait::class.java).tryUpdateChaseTarget(null)
-				player.sendMessage("§7${npc.name} has stopped attacking.")
-				 */
+				plugin.askForPermission(
+					"Do you want <gold>${npc.name}</gold> to stop attacking ${player.name}?",
+					onAccept = {
+						npc.getOrAddTrait(SentinelTrait::class.java).removeTarget("player:${player.name}")
+						npc.getOrAddTrait(SentinelTrait::class.java).tryUpdateChaseTarget(null)
+						player.sendMessage("§7${npc.name} has stopped attacking you.")
+					},
+					onRefuse = {},
+				)
 			}
 			intent.giveQuest > 0.7 -> {
 				// Give quest with enhanced collect objectives
@@ -395,11 +417,7 @@ class NPCActionIntentRecognizer(
 	/**
 	 * Creates a quest from intent details and assigns it to the player
 	 */
-	private fun createAndAssignQuest(
-		npc: NPC,
-		player: Player,
-		questDetails: QuestDetails,
-	) {
+	private fun createAndAssignQuest(npc: NPC, player: Player, questDetails: QuestDetails) {
 		// Create a unique ID for this quest
 		val questId = "npc_${npc.id}_quest_${System.currentTimeMillis()}"
 
@@ -409,11 +427,11 @@ class NPCActionIntentRecognizer(
 				QuestObjective(
 					description = objDetail.description,
 					type =
-						try {
-							ObjectiveType.valueOf(objDetail.type)
-						} catch (e: Exception) {
-							ObjectiveType.TALK // Default to TALK if invalid type
-						},
+					try {
+						ObjectiveType.valueOf(objDetail.type)
+					} catch (e: Exception) {
+						ObjectiveType.TALK // Default to TALK if invalid type
+					},
 					target = objDetail.target,
 					required = objDetail.required.coerceAtLeast(1), // Ensure at least 1 required
 				)
@@ -426,13 +444,24 @@ class NPCActionIntentRecognizer(
 				title = questDetails.title,
 				description = questDetails.description,
 				type =
-					try {
-						QuestType.valueOf(questDetails.questType)
-					} catch (e: Exception) {
-						QuestType.SIDE // Default to SIDE if invalid type
-					},
+				try {
+					QuestType.valueOf(questDetails.questType)
+				} catch (e: Exception) {
+					QuestType.SIDE // Default to SIDE if invalid type
+				},
 				objectives = objectives,
-				rewards = listOf(QuestReward(RewardType.EXPERIENCE, 100)), // Default reward
+				rewards =
+				questDetails.rewards.map { reward ->
+					QuestReward(
+						type =
+						try {
+							reward.type
+						} catch (e: Exception) {
+							RewardType.EXPERIENCE // Default to EXPERIENCE if invalid type
+						},
+						amount = reward.amount.coerceAtLeast(0), // Ensure non-negative amount
+					)
+				},
 			)
 
 		// Register and assign the quest
@@ -460,6 +489,7 @@ class NPCActionIntentRecognizer(
 		val description: String = "",
 		val objectives: List<ObjectiveDetail> = emptyList(),
 		val questType: String = "SIDE",
+		val rewards: List<QuestReward> = emptyList(),
 	)
 
 	data class ObjectiveDetail(

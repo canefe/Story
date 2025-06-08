@@ -3,11 +3,14 @@ package com.canefe.story.webui
 import com.canefe.story.Story
 import com.canefe.story.conversation.Conversation
 import com.canefe.story.conversation.ConversationMessage
+import com.canefe.story.npc.data.NPCData
+import com.canefe.story.npc.memory.Memory
 import java.util.*
 
 // Main DTO for the entire plugin state
 data class PluginStateDTO(
 	val conversations: List<ConversationDTO>,
+	val npcs: List<NPCContextDTO>,
 )
 
 // DTOs for conversations
@@ -38,6 +41,7 @@ data class MemoryDTO(
 	val content: String,
 	val power: Double,
 	val created: Long,
+	val gameCreatedAt: Long,
 	val lastAccessed: Long,
 )
 
@@ -103,6 +107,25 @@ fun Conversation.applyFromDTO(
 		this.addMessage(message)
 	}
 }
+
+fun NPCData.toDTO(): NPCContextDTO =
+	NPCContextDTO(
+		name = name,
+		role = role,
+		context = context,
+		locationName = storyLocation?.name ?: "Unknown",
+		avatar = avatar,
+		memories = memory.map { it.toDTO() },
+	)
+
+fun Memory.toDTO(): MemoryDTO =
+	MemoryDTO(
+		content = content,
+		power = power,
+		created = realCreatedAt.toEpochMilli(),
+		gameCreatedAt = gameCreatedAt,
+		lastAccessed = lastAccessed,
+	)
 
 fun ConversationMessageDTO.toDomain(): ConversationMessage =
 	ConversationMessage(

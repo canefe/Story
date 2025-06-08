@@ -17,9 +17,7 @@ import org.bukkit.event.player.PlayerQuitEvent
 /**
  * Handles player-related events for the Story plugin
  */
-class PlayerEventListener(
-	private val plugin: Story,
-) : Listener {
+class PlayerEventListener(private val plugin: Story) : Listener {
 	/**
 	 * Handles player item drops during conversations
 	 */

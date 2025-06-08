@@ -4,14 +4,18 @@ import com.canefe.story.Story
 import org.bukkit.configuration.file.FileConfiguration
 
 @Suppress("MagicNumber")
-class ConfigService(
-	private val plugin: Story,
-) {
+class ConfigService(private val plugin: Story) {
 	private val config: FileConfiguration get() = plugin.configFile
 
 	// OpenAI API settings
 	var openAIKey: String = ""
+
+	// Model to use important for AI context generation
 	var aiModel: String = ""
+	var maxTokens: Int = 500 // Default max tokens for AI responses
+
+	// Model to use for conversations
+	var aiConversationModel: String = "meta-llama/llama-3.3-70b-instruct"
 
 	// NPC context generation lists
 	var traitList: List<String> = listOf()
@@ -60,6 +64,11 @@ class ConfigService(
 	var maxVoiceFiles: Int = 6
 	var soundNameSpace: String = "iamusic:npc"
 
+	// Misc
+	var maxBookCharactersPerPage: Int = 180
+	var broadcastSessionEntries: Boolean = true // Whether to broadcast session entries to players
+	var debugMessages: Boolean = false // Enable debug messages for development
+
 	// Faction settings
 	var dailyEventsEnabled: Boolean = true
 	var dailyEventsChance: Double = 0.15
@@ -84,6 +93,9 @@ class ConfigService(
 			plugin.npcMessageService.load()
 			plugin.factionManager.load()
 			plugin.playerManager.load()
+			plugin.npcManager.loadConfig()
+			plugin.relationshipManager.load()
+			plugin.sessionManager.load()
 		} catch (e: Exception) {
 			plugin.logger.severe("Failed to reload configuration: ${e.message}")
 		} finally {
@@ -94,7 +106,11 @@ class ConfigService(
 	private fun loadConfigValues() {
 		openAIKey = config.getString("openrouter.apikey", "") ?: ""
 		aiModel =
-			config.getString("openrouter.aiModel", "meta-llama/llama-3.1-70b-instruct") ?: "meta-llama/llama-3.1-70b-instruct"
+			config.getString("openrouter.aiModel", "meta-llama/llama-3.3-70b-instruct") ?: "meta-llama/llama-3.3-70b-instruct"
+
+		maxTokens = config.getInt("openrouter.maxTokens", 500) // Default max tokens for AI responses
+
+		aiConversationModel = config.getString("openrouter.aiConversationModel") ?: "meta-llama/llama-3.3-70b-instruct"
 
 		// Conversation Settings
 		chatEnabled = config.getBoolean("conversation.chatEnabled", true)
@@ -122,6 +138,11 @@ class ConfigService(
 		maxVoiceFiles = config.getInt("npc.maxVoiceFiles", 6)
 		soundNameSpace = config.getString("npc.soundNameSpace", "iamusic:npc") ?: "iamusic:npc"
 
+		// Miscellaneous settings
+		maxBookCharactersPerPage = config.getInt("misc.maxBookCharactersPerPage", 180)
+		broadcastSessionEntries = config.getBoolean("misc.broadcastSessionEntries", true)
+		debugMessages = config.getBoolean("misc.debugMessages", false)
+
 		traitList = config.getStringList("context.traits")
 		quirkList = config.getStringList("context.quirks")
 		motivationList = config.getStringList("context.motivations")
@@ -142,6 +163,8 @@ class ConfigService(
 		// Update all in-memory values back to the config file
 		config.set("openrouter.apikey", openAIKey)
 		config.set("openrouter.aiModel", aiModel)
+		config.set("openrouter.aiConversationModel", aiConversationModel)
+		config.set("openrouter.maxTokens", maxTokens)
 
 		// Conversation settings
 		config.set("conversation.chatEnabled", chatEnabled)
@@ -166,6 +189,11 @@ class ConfigService(
 		// NPC Voice settings
 		config.set("npc.maxVoiceFiles", maxVoiceFiles)
 		config.set("npc.soundNameSpace", soundNameSpace)
+
+		// Miscellaneous settings
+		config.set("misc.maxBookCharactersPerPage", maxBookCharactersPerPage)
+		config.set("misc.broadcastSessionEntries", broadcastSessionEntries)
+		config.set("misc.debugMessages", debugMessages)
 
 		// Context lists
 		config.set("context.traits", traitList)

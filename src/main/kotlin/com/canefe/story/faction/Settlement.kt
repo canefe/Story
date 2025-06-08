@@ -17,12 +17,7 @@ import kotlin.random.Random
 /**
  * Represents a settlement within a faction
  */
-data class Settlement(
-	val id: String,
-	var name: String,
-	var isCapital: Boolean = false,
-	var description: String = "",
-) {
+data class Settlement(val id: String, var name: String, var isCapital: Boolean = false, var description: String = "") {
 	// Reference to parent faction (to be set by faction)
 	var factionId: String? = null
 
@@ -117,10 +112,7 @@ data class Settlement(
 	 */
 	fun experienceForNextLevel(): Double = 1000.0 * level * 1.5
 
-	fun adjustSettlementRelation(
-		targetId: String,
-		change: Int,
-	) {
+	fun adjustSettlementRelation(targetId: String, change: Int) {
 		val current = settlementRelations.getOrDefault(targetId, 0)
 		settlementRelations[targetId] = (current + change).coerceIn(-100, 100)
 	}
@@ -177,6 +169,7 @@ data class Settlement(
 	// Move to Settlement class
 	fun processDailyDynamics(plugin: Story) {
 		val dailyEventsChance = plugin.config.dailyEventsChance
+		val dailyEventsEnabled = plugin.config.dailyEventsEnabled
 
 		// Random resource fluctuations
 		ResourceType.values().forEach { resourceType ->
@@ -201,7 +194,7 @@ data class Settlement(
 		}
 
 		// Generate random events occasionally
-		if (Random.nextDouble() < dailyEventsChance) {
+		if ((Random.nextDouble() < dailyEventsChance) && dailyEventsEnabled) {
 			plugin.factionManager.settlementNPCService
 				.generateRandomEvent(this)
 				.thenAccept { event ->
@@ -271,20 +264,14 @@ data class Settlement(
 		val population: Int = 0,
 	)
 
-	data class ResourceEffect(
-		val resourceType: String = "",
-		val change: Double = 0.0,
-	)
+	data class ResourceEffect(val resourceType: String = "", val change: Double = 0.0)
 
 	fun setStoryLocation(locationId: String) {
 		location = locationId
 		// Update any location-dependent systems
 	}
 
-	private fun generateLeaderAction(
-		settlement: Settlement,
-		leader: Leader,
-	) {
+	private fun generateLeaderAction(settlement: Settlement, leader: Leader) {
 		// Different actions based on leader's strongest attribute
 		val strongestAttribute =
 			listOf(
@@ -778,10 +765,7 @@ data class Settlement(
 	/**
 	 * Distribute items to chests
 	 */
-	private fun distributeItemsToChests(
-		items: List<ItemStack>,
-		chests: List<Chest>,
-	) {
+	private fun distributeItemsToChests(items: List<ItemStack>, chests: List<Chest>) {
 		if (chests.isEmpty() || items.isEmpty()) return
 
 		var itemsPlaced = 0
@@ -1007,10 +991,7 @@ data class Settlement(
 	}
 
 	// Add a resource change to the settlement
-	fun adjustResource(
-		type: ResourceType,
-		change: Double,
-	) {
+	fun adjustResource(type: ResourceType, change: Double) {
 		val currentLevel = resources[type] ?: 0.0
 		resources[type] = (currentLevel + change).coerceIn(0.0, 1.0)
 
@@ -1030,10 +1011,7 @@ data class Settlement(
 	}
 
 	// Add historic event entry
-	fun addHistoryEntry(
-		title: String,
-		description: String,
-	) {
+	fun addHistoryEntry(title: String, description: String) {
 		history.add(HistoryEntry(Date(), title, description))
 
 		// Keep history at a reasonable size
@@ -1043,10 +1021,7 @@ data class Settlement(
 	}
 
 	// Add a settlement action
-	fun addAction(
-		type: LeaderActionType,
-		description: String,
-	) {
+	fun addAction(type: LeaderActionType, description: String) {
 		val action = SettlementAction(type, description, Date())
 		recentActions.add(action)
 
@@ -1301,16 +1276,15 @@ data class SettlementConfig(
 	var blacklistedDenominations: Set<Double> = setOf(13.5, 1.25, 1.5, 4.5, 9.0),
 ) {
 	// Serialization methods (copy from FactionConfig)
-	fun serialize(): Map<String, Any> =
-		mapOf(
-			"workdayHours" to workdayHours,
-			"minerCount" to minerCount,
-			"minerSalary" to minerSalary,
-			"ironValue" to ironValue,
-			"coalValue" to coalValue,
-			"usePhysicalCurrency" to usePhysicalCurrency,
-			"blacklistedDenominations" to blacklistedDenominations.toList(),
-		)
+	fun serialize(): Map<String, Any> = mapOf(
+		"workdayHours" to workdayHours,
+		"minerCount" to minerCount,
+		"minerSalary" to minerSalary,
+		"ironValue" to ironValue,
+		"coalValue" to coalValue,
+		"usePhysicalCurrency" to usePhysicalCurrency,
+		"blacklistedDenominations" to blacklistedDenominations.toList(),
+	)
 
 	fun toYamlSection(): Map<String, Any> {
 		val data = mutableMapOf<String, Any>()
@@ -1325,30 +1299,28 @@ data class SettlementConfig(
 	}
 
 	companion object {
-		fun deserialize(data: Map<String, Any?>): SettlementConfig =
-			SettlementConfig(
-				workdayHours = (data["workdayHours"] as? Number)?.toInt() ?: 8,
-				minerCount = (data["minerCount"] as? Number)?.toInt() ?: 20,
-				minerSalary = (data["minerSalary"] as? Number)?.toDouble() ?: 0.01,
-				ironValue = (data["ironValue"] as? Number)?.toDouble() ?: 0.10,
-				coalValue = (data["coalValue"] as? Number)?.toDouble() ?: 0.01,
-				usePhysicalCurrency = data["usePhysicalCurrency"] as? Boolean ?: true,
-				blacklistedDenominations =
-					(data["blacklistedDenominations"] as? List<Number>)?.map { it.toDouble() }?.toSet()
-						?: setOf(13.5, 1.25, 1.5, 4.5, 9.0),
-			)
+		fun deserialize(data: Map<String, Any?>): SettlementConfig = SettlementConfig(
+			workdayHours = (data["workdayHours"] as? Number)?.toInt() ?: 8,
+			minerCount = (data["minerCount"] as? Number)?.toInt() ?: 20,
+			minerSalary = (data["minerSalary"] as? Number)?.toDouble() ?: 0.01,
+			ironValue = (data["ironValue"] as? Number)?.toDouble() ?: 0.10,
+			coalValue = (data["coalValue"] as? Number)?.toDouble() ?: 0.01,
+			usePhysicalCurrency = data["usePhysicalCurrency"] as? Boolean ?: true,
+			blacklistedDenominations =
+			(data["blacklistedDenominations"] as? List<Number>)?.map { it.toDouble() }?.toSet()
+				?: setOf(13.5, 1.25, 1.5, 4.5, 9.0),
+		)
 
-		fun fromYamlSection(data: Map<String, Any?>): SettlementConfig =
-			SettlementConfig(
-				workdayHours = (data["workdayHours"] as? Number)?.toInt() ?: 8,
-				minerCount = (data["minerCount"] as? Number)?.toInt() ?: 20,
-				minerSalary = (data["minerSalary"] as? Number)?.toDouble() ?: 0.01,
-				ironValue = (data["ironValue"] as? Number)?.toDouble() ?: 0.10,
-				coalValue = (data["coalValue"] as? Number)?.toDouble() ?: 0.01,
-				usePhysicalCurrency = data["usePhysicalCurrency"] as? Boolean ?: true,
-				blacklistedDenominations =
-					(data["blacklistedDenominations"] as? List<Number>)?.map { it.toDouble() }?.toSet()
-						?: setOf(13.5, 1.25, 1.5, 4.5, 9.0),
-			)
+		fun fromYamlSection(data: Map<String, Any?>): SettlementConfig = SettlementConfig(
+			workdayHours = (data["workdayHours"] as? Number)?.toInt() ?: 8,
+			minerCount = (data["minerCount"] as? Number)?.toInt() ?: 20,
+			minerSalary = (data["minerSalary"] as? Number)?.toDouble() ?: 0.01,
+			ironValue = (data["ironValue"] as? Number)?.toDouble() ?: 0.10,
+			coalValue = (data["coalValue"] as? Number)?.toDouble() ?: 0.01,
+			usePhysicalCurrency = data["usePhysicalCurrency"] as? Boolean ?: true,
+			blacklistedDenominations =
+			(data["blacklistedDenominations"] as? List<Number>)?.map { it.toDouble() }?.toSet()
+				?: setOf(13.5, 1.25, 1.5, 4.5, 9.0),
+		)
 	}
 }

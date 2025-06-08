@@ -10,9 +10,7 @@ import kotlin.random.Random
 /**
  * Service responsible for generating and updating NPC context information.
  */
-class NPCContextGenerator(
-	private val plugin: Story,
-) {
+class NPCContextGenerator(private val plugin: Story) {
 	/**
 	 * Generates a default context for a new NPC.
 	 */
@@ -61,14 +59,14 @@ class NPCContextGenerator(
 						?: plugin.locationManager.createLocation("Village", null)
 						?: return null,
 					context =
-						generateDefaultContext(
-							npcName,
-							"Default role",
-							hours,
-							minutes,
-							season,
-							date,
-						),
+					generateDefaultContext(
+						npcName,
+						"Default role",
+						hours,
+						minutes,
+						season,
+						date,
+					),
 				)
 
 			// Update or generate context

@@ -13,38 +13,206 @@ import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.meta.BookMeta
 import java.util.regex.Pattern
+import kotlin.compareTo
+import kotlin.text.append
+import kotlin.text.compareTo
 
 class QuestCommandUtils {
 	val story: Story = Story.instance
 	val mm: MiniMessage = story.miniMessage
 	val locationManager: LocationManager = story.locationManager
 
-	fun createButton(
-		label: String,
-		color: String,
-		clickAction: String,
-		command: String,
-		hoverText: String,
-	): Component = CommandComponentUtils.createButton(mm, label, color, clickAction, command, hoverText)
+	fun createButton(label: String, color: String, clickAction: String, command: String, hoverText: String): Component =
+		CommandComponentUtils.createButton(mm, label, color, clickAction, command, hoverText)
 
-	fun getStatusColor(status: QuestStatus): String =
-		when (status) {
-			QuestStatus.NOT_STARTED -> "<gray>"
-			QuestStatus.IN_PROGRESS -> "<yellow>"
-			QuestStatus.COMPLETED -> "<green>"
-			QuestStatus.FAILED -> "<red>"
-		}
+	fun getStatusColor(status: QuestStatus): String = when (status) {
+		QuestStatus.NOT_STARTED -> "<gray>"
+		QuestStatus.IN_PROGRESS -> "<yellow>"
+		QuestStatus.COMPLETED -> "<green>"
+		QuestStatus.FAILED -> "<red>"
+	}
 
 	fun statusParser(status: String): String {
 		val words = status.split("_")
 		return words.joinToString(" ") { it.replaceFirstChar { it.uppercase() } }
 	}
 
+	fun openJournalBook(player: Player, target: OfflinePlayer? = null) {
+		val targetUuid = target?.uniqueId ?: player.uniqueId
+		val targetName = EssentialsUtils.getNickname(target?.name ?: player.name)
+		val isAdmin = target != null && player.hasPermission("story.journal.admin")
+
+		// Create the book item
+		val book = ItemStack(Material.WRITTEN_BOOK)
+		val meta = book.itemMeta as BookMeta
+
+		// Set book properties
+		meta.title(story.miniMessage.deserialize(if (isAdmin) "$targetName's Journal" else "Journal"))
+		meta.author(story.miniMessage.deserialize("<gold>Story Plugin</gold>"))
+
+		// Commands [My Quests], [Known Individuals], [Memories]
+		val commands = CommandComponentUtils.combineComponentsWithSeparator(
+			story.miniMessage,
+			listOf(
+				createButton("My Quests", "#8e44ad", "run_command", "/story q qb", "The quests I'm working on"),
+				createButton(
+					"My Relationships",
+					"#8e44ad",
+					"run_command",
+					"/story q journal individuals ${target?.name ?: player.name}",
+					"People I know about",
+				),
+				createButton(
+					"Memories",
+					"#8e44ad",
+					"run_command",
+					"/story q journal memories ${target?.name ?: player.name}",
+					"My strongest memories",
+				),
+			),
+			"\n<gray>------------------</gray>\n",
+		)
+		val mainPage =
+			Component
+				.text()
+				.append(story.miniMessage.deserialize("<gold>I am $targetName.</gold>\n\n"))
+				.append(commands)
+				.build()
+		meta.addPages(mainPage)
+
+		// Set the metadata back to the book
+		book.itemMeta = meta
+
+		// Open the book for the player
+		player.openBook(book)
+	}
+
+	fun openIndividualsBook(player: Player, target: OfflinePlayer? = null) {
+		val targetUuid = target?.uniqueId ?: player.uniqueId
+		val targetName = EssentialsUtils.getNickname(target?.name ?: player.name)
+		val isAdmin = target != null && player.hasPermission("story.journal.admin")
+
+		// Create the book item
+		val book = ItemStack(Material.WRITTEN_BOOK)
+		val meta = book.itemMeta as BookMeta
+
+		// Set book properties
+		meta.title(story.miniMessage.deserialize(if (isAdmin) "$targetName's Known Individuals" else "Known Individuals"))
+		meta.author(story.miniMessage.deserialize("<gold>Story Plugin</gold>"))
+
+		val relationships = story.relationshipManager.getAllRelationships(
+			EssentialsUtils.getNickname(target?.name ?: player.name),
+		)
+
+		if (relationships.isEmpty()) {
+			val noIndividualsPage =
+				story.miniMessage.deserialize("<gold>No Known Individuals</gold>\n\n<gray>I do not know anyone.")
+			meta.addPages(noIndividualsPage)
+		} else {
+			var individualIndex = 1
+			val sortedRelationships = relationships
+				.filter { it.value.score != 0.0 }
+				.toList()
+				.sortedByDescending { it.second.score }
+
+			sortedRelationships.forEach { (_, individual) ->
+				val formattedScore = String.format("%.2f", individual.score)
+				val pageContent =
+					story.miniMessage.deserialize(
+						"<#8e44ad>${individual.targetName}</#8e44ad><gray> ($formattedScore)\n" +
+							"<#16a085>${individual.type}</#16a085>\n",
+					)
+				for (trait in individual.traits) {
+					pageContent.append(Component.text("<gray>-</gray> <gold>$trait</gold>").append(Component.newline()))
+				}
+				meta.addPages(pageContent)
+				individualIndex++
+			}
+		}
+
+		// Set the metadata back to the book
+		book.itemMeta = meta
+
+		// Open the book for the player
+		player.openBook(book)
+	}
+
+	fun openMemoriesBook(player: Player, target: OfflinePlayer? = null) {
+		val targetUuid = target?.uniqueId ?: player.uniqueId
+		val targetName = EssentialsUtils.getNickname(target?.name ?: player.name)
+		val isAdmin = target != null && player.hasPermission("story.journal.admin")
+
+		// Create the book item
+		val book = ItemStack(Material.WRITTEN_BOOK)
+		val meta = book.itemMeta as BookMeta
+
+		// Set book properties
+		meta.title(story.miniMessage.deserialize(if (isAdmin) "$targetName's Memories" else "Memories"))
+		meta.author(story.miniMessage.deserialize("<gold>Story Plugin</gold>"))
+
+		val target = target ?: player
+
+		if (target.name == null) {
+			player.sendMessage(story.miniMessage.deserialize("<red>Error: Target player has no name!"))
+			return
+		}
+		// Get memories for the target player
+		val contextResult = story.npcContextGenerator.getOrCreateContextForNPC(
+			EssentialsUtils.getNickname(target.name!!),
+		)
+		val memories = contextResult?.memories?.let { memList ->
+			val memoryList = ArrayList(memList)
+			memoryList.sortWith { m1, m2 ->
+				m2.gameCreatedAt.compareTo(m1.gameCreatedAt) // Sort by creation time, newest first
+			}
+			memoryList
+		}
+
+		if (memories == null) {
+			player.sendMessage(story.miniMessage.deserialize("<red>Error: No memories found for ${target.name}"))
+			return
+		}
+
+		if (memories.isEmpty()) {
+			val noMemoriesPage =
+				story.miniMessage.deserialize("<gold>No Memories Found</gold>\n\n<gray>You have no recorded memories.")
+			meta.addPages(noMemoriesPage)
+		} else {
+			var memoryIndex = 1
+			memories.forEach { memory ->
+				// get cur page index
+				var pageIndex = meta.pages().size
+				if (pageIndex == 0) {
+					meta.addPages(story.miniMessage.deserialize("<#8e44ad>Memory</#8e44ad>\n")) // Ensure we start with at least one page
+					pageIndex = 1
+				}
+				// Add memory title
+				meta.page(
+					pageIndex,
+					story.miniMessage.deserialize(
+						"<#8e44ad>Memory</#8e44ad> <gray><i>(${memory.getElapsedTime(story.timeService)} ago)\n\n",
+					),
+				)
+				memoryIndex = memoryIndex + 1
+
+				splitIntoPages(memory.content).forEach { page ->
+					val content = meta.page(pageIndex).append(Component.text(page))
+					meta.page(pageIndex, content)
+					pageIndex = pageIndex + 1
+					meta.addPages(Component.text("\n\n")) // Add empty page to continue
+				}
+			}
+		}
+
+		// Set the metadata back to the book
+		book.itemMeta = meta
+
+		// Open the book for the player
+		player.openBook(book)
+	}
+
 	// In QuestCommandUtils class
-	fun openQuestBook(
-		player: Player,
-		target: OfflinePlayer? = null,
-	) {
+	fun openQuestBook(player: Player, target: OfflinePlayer? = null) {
 		val targetUuid = target?.uniqueId ?: player.uniqueId
 		val targetName = EssentialsUtils.getNickname(target?.name ?: player.name)
 		val isAdmin = target != null && player.hasPermission("story.quest.admin")
@@ -64,7 +232,7 @@ class QuestCommandUtils {
 		val activeQuests =
 			quests.filter { (questId, _) ->
 				val status = story.questManager.getPlayerQuestStatus(target ?: player, questId)
-				status != QuestStatus.COMPLETED
+				status == QuestStatus.IN_PROGRESS
 			}
 
 		if (activeQuests.isEmpty()) {
@@ -74,13 +242,16 @@ class QuestCommandUtils {
 					.append(story.miniMessage.deserialize("<gold>No Active Quests</gold>\n\n"))
 					.append(
 						story.miniMessage.deserialize(
-							"<gray>There are no active quests assigned to ${if (isAdmin) targetName else "you"} at the moment.",
+							"<gray>I do not have any quests at the moment.",
 						),
 					).build()
 			meta.addPages(noQuestsPage)
 		} else {
+			// Convert map entries to a list and reverse it
+			val reversedEntries = activeQuests.entries.toList().reversed()
+
 			// Create pages for each quest
-			activeQuests.forEach { (questId, playerQuest) ->
+			reversedEntries.forEach { (questId, playerQuest) ->
 				val quest = story.questManager.getQuest(questId) ?: return@forEach
 				val status = story.questManager.getPlayerQuestStatus(target ?: player, questId)
 				val statusColor = getStatusColor(status)
@@ -146,7 +317,7 @@ class QuestCommandUtils {
 		var currentPage = StringBuilder()
 		var paragraphsInCurrentPage = 0
 		var index = 0
-		val maxCharacters = 160
+		val maxCharacters = story.config.maxBookCharactersPerPage
 
 		while (index < paragraphs.size) {
 			val paragraph = paragraphs[index]

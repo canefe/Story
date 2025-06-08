@@ -51,6 +51,22 @@ class NPCDataManager private constructor(
 		return YamlConfiguration.loadConfiguration(npcFile)
 	}
 
+	fun getAllNPCData(): List<NPCData> {
+		val allNPCData = mutableListOf<NPCData>()
+		val npcNames = getAllNPCNames()
+
+		for (npcName in npcNames) {
+			val npcData = getNPCData(npcName)
+			if (npcData != null) {
+				allNPCData.add(npcData)
+			} else {
+				plugin.logger.warning("Failed to load NPC data for $npcName")
+			}
+		}
+
+		return allNPCData
+	}
+
 	fun getNPCData(npcName: String): NPCData? {
 		// Check if NPC data is already cached
 		if (npcDataCache.containsKey(npcName)) {

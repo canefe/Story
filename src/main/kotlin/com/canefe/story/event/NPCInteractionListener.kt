@@ -7,8 +7,10 @@ import com.canefe.story.api.event.NPCParticipant
 import com.canefe.story.api.event.PlayerParticipant
 import com.canefe.story.util.Msg.sendError
 import com.canefe.story.util.Msg.sendInfo
+import io.papermc.paper.command.brigadier.argument.ArgumentTypes.player
 import io.papermc.paper.event.player.AsyncChatEvent
 import net.citizensnpcs.api.CitizensAPI
+import net.citizensnpcs.api.event.NPCSpawnEvent
 import net.citizensnpcs.api.npc.NPC
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
 import org.bukkit.Bukkit
@@ -20,9 +22,7 @@ import org.bukkit.inventory.EquipmentSlot
 import java.util.ArrayList
 import java.util.concurrent.CompletableFuture
 
-class NPCInteractionListener(
-	private val plugin: Story,
-) : Listener {
+class NPCInteractionListener(private val plugin: Story) : Listener {
 	/**
 	 * Handles player chat events and processes NPC interactions
 	 */
@@ -76,7 +76,7 @@ class NPCInteractionListener(
 						}
 
 				// Combine regular NPCs with impersonated NPCs for interaction
-				val allInteractableNPCs = (nearbyNPCs + disguisedPlayers + mythicMobNPCs).distinct()
+				val allInteractableNPCs = (nearbyNPCs + disguisedPlayers).distinct()
 
 				// Check if any nearby NPC is already in a conversation that player can join
 				val currentConversation = plugin.conversationManager.getConversation(player)
@@ -88,6 +88,10 @@ class NPCInteractionListener(
 					// Check for NPCs that need to be removed from player's conversation
 					val npcsToRemove = ArrayList<NPC>()
 					for (npc in currentConversation.npcs) {
+						if (plugin.mythicMobConversation.isMythicMobNPC(npc.entity)) {
+							// Skip MythicMob NPCs
+							continue
+						}
 						if (!allInteractableNPCs.contains(npc) || plugin.npcManager.isNPCDisabled(npc)) {
 							npcsToRemove.add(npc)
 						}
@@ -96,7 +100,11 @@ class NPCInteractionListener(
 					// Check for NPCs that need to be added to player's conversations
 					val npcsToAdd = ArrayList<NPC>()
 					for (npc in allInteractableNPCs) {
-						if (isWhispering) {
+						// skip if its MythicMob NPC
+						if (plugin.mythicMobConversation.isMythicMobNPC(npc.entity)) {
+							continue
+						}
+						if (!isWhispering) {
 							if (!plugin.npcManager.isNPCDisabled(npc) && !currentConversation.npcs.contains(npc)) {
 								npcsToAdd.add(npc)
 							}
@@ -171,11 +179,7 @@ class NPCInteractionListener(
 	/**
 	 * Attempts to start a new conversation with nearby NPCs
 	 */
-	private fun tryStartNewConversation(
-		player: org.bukkit.entity.Player,
-		message: String?,
-		nearbyNPCs: List<NPC>,
-	) {
+	private fun tryStartNewConversation(player: org.bukkit.entity.Player, message: String?, nearbyNPCs: List<NPC>) {
 		// Run on main thread to fire events
 		Bukkit.getScheduler().runTask(
 			plugin,
@@ -206,6 +210,17 @@ class NPCInteractionListener(
 				}
 			},
 		)
+	}
+
+	@EventHandler
+	fun onNPCSpawn(event: NPCSpawnEvent) {
+		val npc = event.npc
+		val scaledNPCs = plugin.npcManager.scaledNPCs
+		val scale = scaledNPCs[npc.uniqueId]
+
+		if (scale != null) {
+			plugin.npcManager.scaleNPC(npc, scale)
+		}
 	}
 
 	/**
@@ -257,10 +272,7 @@ class NPCInteractionListener(
 	/**
 	 * Handles a direct interaction with an NPC (either real or imitated by a disguised player)
 	 */
-	fun handleDirectInteraction(
-		player: Player,
-		npc: NPC,
-	) {
+	fun handleDirectInteraction(player: Player, npc: NPC) {
 		// Save the last interacted NPC
 		plugin.playerManager.playerCurrentNPC[player.uniqueId] = npc.uniqueId
 

@@ -5,10 +5,8 @@ import com.canefe.story.command.conversation.ConvCommand
 import com.canefe.story.command.faction.FactionCommand
 import com.canefe.story.command.faction.SettlementCommand
 import com.canefe.story.command.story.StoryCommand
-import com.canefe.story.conversation.Conversation
 import com.canefe.story.conversation.ConversationMessage
 import com.canefe.story.npc.data.NPCData
-import com.canefe.story.npc.relationship.Relationship
 import com.canefe.story.util.EssentialsUtils
 import com.canefe.story.util.Msg.sendError
 import com.canefe.story.util.Msg.sendInfo
@@ -32,9 +30,7 @@ import kotlin.compareTo
 /**
  * Centralized command manager that registers and manages all plugin commands.
  */
-class CommandManager(
-	private val plugin: Story,
-) {
+class CommandManager(private val plugin: Story) {
 	private val commandExecutors = mutableMapOf<String, CommandExecutor>()
 
 	/**
@@ -68,6 +64,7 @@ class CommandManager(
 		StoryCommand(plugin).register()
 		FactionCommand(plugin, plugin.factionManager).registerCommands()
 		SettlementCommand().register()
+		// AIDMCommand(plugin, plugin.aiDungeonMaster).register()
 
 		// Register simpler commands
 		registerSimpleCommands()
@@ -249,11 +246,30 @@ class CommandManager(
 					val context = args.get("context") as String
 
 					// Check if NPC exists first
-					val npcData = plugin.npcDataManager.getNPCData(npcName)
-					if (npcData == null) {
-						sender.sendError("NPC $npcName not found. Please create the NPC first.")
-						return@CommandExecutor
-					}
+					val npcData =
+						plugin.npcDataManager.getNPCData(npcName)
+							?: run {
+								// Initialize NPC data if it doesn't exist
+								val npcContext =
+									plugin.npcContextGenerator
+										.getOrCreateContextForNPC(npcName) ?: run {
+										sender.sendError("NPC context not found. Please create the NPC first.")
+										return@CommandExecutor
+									}
+								plugin.npcDataManager.saveNPCData(
+									npcName,
+									NPCData(
+										npcName,
+										npcContext.role,
+										plugin.locationManager.getLocation("Wilderness"),
+										npcContext.context,
+									),
+								)
+								plugin.npcDataManager.getNPCData(npcName) ?: run {
+									sender.sendError("Failed to create NPC data for $npcName")
+									return@CommandExecutor
+								}
+							}
 
 					sender.sendInfo("Creating memory for <yellow>$npcName</yellow> based on: <italic>$context</italic>")
 
@@ -470,18 +486,7 @@ class CommandManager(
 				},
 			).register()
 
-		fun talkAsNPC(
-			player: Player,
-			npcUniqueId: UUID,
-			message: String,
-		) {
-			// Get Current NPC
-			var currentNPC = npcUniqueId
-
-			if (currentNPC == null) {
-				player.sendError("Please select an NPC first.")
-				throw CommandAPI.failWithString("You are not in a conversation with any NPC.")
-			}
+		fun talkAsNPC(player: Player, npcUniqueId: UUID, message: String) {
 			// Check if NPC exists
 			val npc = CitizensAPI.getNPCRegistry().getByUniqueId(npcUniqueId)
 			if (npc == null) {
@@ -538,6 +543,8 @@ class CommandManager(
 								existingConversation.addPlayer(p)
 							}
 						}
+
+						// Any disguised players should also be added to the conversation
 
 						plugin.conversationManager.handleHolograms(existingConversation, npc.name)
 						return@run existingConversation
@@ -616,7 +623,7 @@ class CommandManager(
 			// Add relationship context with clear section header
 			val relationships = plugin.relationshipManager.getAllRelationships(npc.name)
 			if (relationships.isNotEmpty()) {
-				val relationshipContext = buildRelationshipContext(relationships, conversation)
+				val relationshipContext = plugin.relationshipManager.buildRelationshipContext(npc.name, relationships, conversation)
 				if (relationshipContext.isNotEmpty()) {
 					responseContext = responseContext + "===RELATIONSHIPS===\n$relationshipContext"
 				}
@@ -625,7 +632,9 @@ class CommandManager(
 			// based on message, use npcresponseservice to generate a response
 			responseContext =
 				responseContext +
-				"[INSTRUCTION] This message is a draft of what $npcName is should say. Rewrite it into a fully fleshed-out line that reflects $npcName’s personality, tone, and the context. The message is as follows: $message"
+				"[INSTRUCTION] The message '$message' is a draft of what $npcName is should say. Rewrite it into a fully fleshed-out line that reflects $npcName’s personality, tone, and the context. The message is as follows: '$message'. YOU MUST GENERATE A FULLY FLESHED MESSAGE BASED ON THIS DRAFT. YOU ARE NOT ANSWERING TO THE MESSAGE, YOU ARE GENERATING A NEW MESSAGE BASED ON IT. " +
+				"Example draft: 'You should leave.' " +
+				"Example final message: 'You should leave, stranger. You are not welcome here' (if thats what the context gives) "
 			plugin.npcResponseService.generateNPCResponse(npc, responseContext, false).thenApply { response ->
 
 				if (!shouldStream) {
@@ -845,32 +854,6 @@ class CommandManager(
 		return input
 	}
 
-	/**
-	 * Builds a relationship context string for NPCs in the conversation
-	 *
-	 * @param relationships Map of relationships for the NPC
-	 * @param conversation The current conversation
-	 * @return A formatted string containing relationship information relevant to the conversation
-	 */
-	private fun buildRelationshipContext(
-		relationships: Map<String, Relationship>,
-		conversation: Conversation,
-	): String =
-		relationships.values
-			.filter { rel ->
-				// Only include relationships with entities that are in the conversation
-				conversation.npcs.any { it.name == rel.targetName } ||
-					conversation.players?.any { playerId ->
-						val player = Bukkit.getPlayer(playerId)
-						player != null && EssentialsUtils.getNickname(player.name) == rel.targetName
-					} == true
-			}.joinToString("\n") { rel ->
-				"${rel.id} feels ${rel.type} towards ${rel.targetName}: ${rel.describe()}"
-			}
-
 	// Helper data class for Gson parsing
-	data class NPCInfo(
-		val context: String? = null,
-		val appearance: String? = null,
-	)
+	data class NPCInfo(val context: String? = null, val appearance: String? = null)
 }

@@ -12,9 +12,7 @@ import java.util.concurrent.CompletableFuture
 /**
  * Service responsible for handling radiant conversations between NPCs and players
  */
-class RadiantConversationService(
-	private val plugin: Story,
-) {
+class RadiantConversationService(private val plugin: Story) {
 	private val npcManager = NPCManager.getInstance(plugin)
 
 	/**
@@ -66,10 +64,7 @@ class RadiantConversationService(
 	/**
 	 * Triggers a radiant conversation with an NPC and a player or another NPC
 	 */
-	private fun triggerRadiantConversation(
-		initiator: NPC,
-		player: Player,
-	) {
+	private fun triggerRadiantConversation(initiator: NPC, player: Player) {
 		if (plugin.conversationManager.isInConversation(initiator)) {
 			return
 		}
@@ -122,10 +117,9 @@ class RadiantConversationService(
 	/**
 	 * Check if a player is an invalid target for conversation
 	 */
-	private fun isPlayerInvalidTarget(player: Player): Boolean =
-		isVanished(player) ||
-			plugin.playerManager.isPlayerDisabled(player) ||
-			plugin.conversationManager.isInConversation(player)
+	private fun isPlayerInvalidTarget(player: Player): Boolean = isVanished(player) ||
+		plugin.playerManager.isPlayerDisabled(player) ||
+		plugin.conversationManager.isInConversation(player)
 
 	/**
 	 * Check if a player is vanished
@@ -140,10 +134,7 @@ class RadiantConversationService(
 	/**
 	 * Initiates a conversation between an NPC and a player
 	 */
-	private fun initiatePlayerConversation(
-		initiator: NPC,
-		player: Player,
-	) {
+	private fun initiatePlayerConversation(initiator: NPC, player: Player) {
 		val initiatorName = initiator.name
 
 		CompletableFuture.runAsync {
