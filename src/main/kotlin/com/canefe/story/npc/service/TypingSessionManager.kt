@@ -87,7 +87,7 @@ class TypingSessionManager(
 		try {
 			if (PluginUtils.isPluginEnabled("DecentHolograms")) {
 				val npcUUID = npc.uniqueId.toString()
-				DHAPI.removeHologram(npcUUID + "_dialogue")
+				DHAPI.removeHologram(npcUUID)
 			}
 		} catch (e: Exception) {
 			plugin.logger.warning("Error clearing existing hologram: ${e.message}")
@@ -140,7 +140,7 @@ class TypingSessionManager(
 				try {
 					if (PluginUtils.isPluginEnabled("DecentHolograms")) {
 						val npcUUID = session.npc.uniqueId.toString()
-						DHAPI.removeHologram(npcUUID + "_dialogue")
+						DHAPI.removeHologram(npcUUID)
 					}
 				} catch (e: Exception) {
 					plugin.logger.warning("Error removing NPC typing hologram: ${e.message}")
