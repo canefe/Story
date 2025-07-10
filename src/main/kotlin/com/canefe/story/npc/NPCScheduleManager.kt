@@ -179,6 +179,23 @@ class NPCScheduleManager private constructor(private val plugin: Story) {
 										return@filter false
 									}
 
+									if (plugin.npcManager.isNPCDisabled(npc)) {
+										if (debugMessages) {
+											plugin.logger.info("NPC $npcName is disabled, skipping random pathing.")
+										}
+										return@filter false
+									}
+
+									// check if random pathing is enabled for this NPC
+									val npcData = plugin.npcDataManager.getNPCData(npcName)
+
+									if (npcData?.randomPathing == false) {
+										if (debugMessages) {
+											plugin.logger.info("NPC $npcName has random pathing disabled, skipping.")
+										}
+										return@filter false
+									}
+
 									val nearbyPlayers =
 										plugin.getNearbyPlayers(
 											currentLocation,

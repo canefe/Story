@@ -87,6 +87,7 @@ class NPCDataManager private constructor(
 			val appearance = config.getString("appearance") ?: ""
 			val avatar = config.getString("avatar") ?: ""
 			val knowledgeCategories = config.getStringList("knowledgeCategories").map { it.toString() }
+			val randomPathing = config.getBoolean("randomPathing", true)
 
 			val storyLocation =
 				plugin.locationManager.getLocation(location) ?: plugin.locationManager.createLocation(location, null)
@@ -260,6 +261,7 @@ class NPCDataManager private constructor(
 		// Other properties
 		config.set("avatar", npcData.avatar)
 		config.set("knowledgeCategories", npcData.knowledgeCategories)
+		config.set("randomPathing", npcData.randomPathing)
 
 		try {
 			config.save(npcFile)

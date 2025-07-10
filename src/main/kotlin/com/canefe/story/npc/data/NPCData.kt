@@ -13,6 +13,7 @@ data class NPCData(
 	var avatar: String = ""
 	var knowledgeCategories: List<String> = listOf()
 	var appearance: String = ""
+	var randomPathing: Boolean = true
 
 	// Helper method to add a memory
 	fun addMemory(
