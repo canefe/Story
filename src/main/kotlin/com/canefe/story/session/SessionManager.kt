@@ -86,6 +86,53 @@ class SessionManager private constructor(private val plugin: Story) {
 			.map { it.lowercase().trim(',', '.', '?', '!', '\'', '"') }
 			.distinct()
 
+		// Determine which player is mentioned in the text and get their current location
+		var currentPlayerLocation: String? = null
+		for (playerName in session.players) {
+			val player = plugin.server.getPlayer(playerName)
+			if (player != null) {
+				// Check if this player is mentioned in the text
+				val nickname = com.canefe.story.util.EssentialsUtils.getNickname(player.name)
+				if (text.contains(player.name, ignoreCase = true) ||
+					text.contains(nickname, ignoreCase = true) ||
+					keywords.any { keyword ->
+						keyword.equals(player.name, ignoreCase = true) ||
+							keyword.equals(nickname, ignoreCase = true)
+					}
+				) {
+					// Get the player's current location
+					val actualLocation = plugin.locationManager.getLocationByPosition(player.location, 150.0)
+					if (actualLocation != null) {
+						currentPlayerLocation = "${player.name} is currently at ${actualLocation.name}.\n" +
+							"Location context: ${actualLocation.getContextForPrompt(plugin.locationManager)}\n"
+						break // Use the first mentioned player found
+					}
+				}
+			}
+		}
+
+		// If no specific player was mentioned, use the first online player from the session
+		if (currentPlayerLocation == null) {
+			for (playerName in session.players) {
+				val player = plugin.server.getPlayer(playerName)
+				if (player != null) {
+					val actualLocation = plugin.locationManager.getLocationByPosition(player.location, 150.0)
+					if (actualLocation != null) {
+						currentPlayerLocation = "Current scene location: ${actualLocation.name}.\n" +
+							"Location context: ${actualLocation.getContextForPrompt(plugin.locationManager)}\n"
+						break
+					}
+				}
+			}
+		}
+
+		// Add current location context if found
+		if (currentPlayerLocation != null) {
+			contextBuilder.append("CURRENT LOCATION:\n")
+			contextBuilder.append(currentPlayerLocation)
+			contextBuilder.append("\n")
+		}
+
 		// Check for location references
 		val mentionedLocations = plugin.locationManager.getAllLocations().filter { location ->
 			text.contains(location.name, ignoreCase = true) ||

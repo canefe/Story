@@ -33,6 +33,7 @@ class ConfigService(private val plugin: Story) {
 	var responseDelay: Double = 2.0
 	var mythicMobsEnabled: Boolean = true
 	var streamMessages: Boolean = true
+	var behavioralDirectivesEnabled: Boolean = true // Whether to generate behavioral directives for NPCs
 
 	/*
 	NPC Behavior settings
@@ -69,10 +70,19 @@ class ConfigService(private val plugin: Story) {
 	var broadcastSessionEntries: Boolean = true // Whether to broadcast session entries to players
 	var debugMessages: Boolean = false // Enable debug messages for development
 
+	// Skills
+	var skillProvider: String = "MMOCore" // Default skill provider
+
 	// Faction settings
 	var dailyEventsEnabled: Boolean = true
 	var dailyEventsChance: Double = 0.15
 	var followedSettlements: List<String> = listOf()
+
+	var voiceGenerationEnabled: Boolean = true
+	var playerVoiceGenerationEnabled: Boolean = true
+	var elevenLabsApiKey: String = ""
+	var elevenLabsVoices: Map<String, String> = mapOf()
+	var scheduleVoiceGenerationEnabled: Boolean = true
 
 	init {
 		plugin.saveDefaultConfig()
@@ -96,6 +106,7 @@ class ConfigService(private val plugin: Story) {
 			plugin.npcManager.loadConfig()
 			plugin.relationshipManager.load()
 			plugin.sessionManager.load()
+			plugin.voiceManager.load()
 		} catch (e: Exception) {
 			plugin.logger.severe("Failed to reload configuration: ${e.message}")
 		} finally {
@@ -123,6 +134,7 @@ class ConfigService(private val plugin: Story) {
 		mythicMobsEnabled =
 			config.getBoolean("conversation.mythicMobsEnabled", true) // MythicMobs integration enabled
 		streamMessages = config.getBoolean("conversation.streamMessages", true) // Stream messages to players
+		behavioralDirectivesEnabled = config.getBoolean("conversation.behavioralDirectivesEnabled", true) // Whether to generate behavioral directives for NPCs
 
 		// NPC Behavior Settings
 		headRotationDelay = config.getInt("npc.headRotationDelay", 2)
@@ -142,6 +154,22 @@ class ConfigService(private val plugin: Story) {
 		maxBookCharactersPerPage = config.getInt("misc.maxBookCharactersPerPage", 180)
 		broadcastSessionEntries = config.getBoolean("misc.broadcastSessionEntries", true)
 		debugMessages = config.getBoolean("misc.debugMessages", false)
+
+		// Skills
+		skillProvider = config.getString("misc.skillProvider", "MMOCore") ?: "MMOCore"
+
+		voiceGenerationEnabled = config.getBoolean("misc.voiceGenerationEnabled", true)
+		playerVoiceGenerationEnabled = config.getBoolean("misc.playerVoiceGenerationEnabled", true) // New config for player voices
+
+		elevenLabsApiKey = config.getString("misc.elevenLabsApiKey", "") ?: ""
+		elevenLabsVoices = config.getConfigurationSection("misc.elevenLabsVoices")
+			?.getKeys(false)
+			?.associateWith { key ->
+				config.getString("misc.elevenLabsVoices.$key") ?: ""
+			}
+			?: emptyMap()
+
+		scheduleVoiceGenerationEnabled = config.getBoolean("misc.scheduleVoiceGenerationEnabled", true)
 
 		traitList = config.getStringList("context.traits")
 		quirkList = config.getStringList("context.quirks")
@@ -175,6 +203,7 @@ class ConfigService(private val plugin: Story) {
 		config.set("conversation.responseDelay", responseDelay)
 		config.set("conversation.mythicMobsEnabled", mythicMobsEnabled)
 		config.set("conversation.streamMessages", streamMessages)
+		config.set("conversation.behavioralDirectivesEnabled", behavioralDirectivesEnabled)
 
 		// NPC Behavior settings
 		config.set("npc.headRotationDelay", headRotationDelay)
@@ -194,20 +223,20 @@ class ConfigService(private val plugin: Story) {
 		config.set("misc.maxBookCharactersPerPage", maxBookCharactersPerPage)
 		config.set("misc.broadcastSessionEntries", broadcastSessionEntries)
 		config.set("misc.debugMessages", debugMessages)
+		config.set("misc.skillProvider", skillProvider)
 
-		// Context lists
-		config.set("context.traits", traitList)
-		config.set("context.quirks", quirkList)
-		config.set("context.motivations", motivationList)
-		config.set("context.flaws", flawList)
-		config.set("context.tones", toneList)
+		config.set("misc.voiceGenerationEnabled", voiceGenerationEnabled)
+		config.set("misc.playerVoiceGenerationEnabled", playerVoiceGenerationEnabled)
+		config.set("misc.elevenLabsApiKey", elevenLabsApiKey)
 
-		// Faction settings
-		config.set("faction.dailyEventsEnabled", dailyEventsEnabled)
-		config.set("faction.dailyEventsChance", dailyEventsChance)
-		config.set("faction.followedSettlements", followedSettlements)
+		// Save elevenLabsVoices map
+		config.set("misc.elevenLabsVoices", null) // Clear existing
+		for ((key, value) in elevenLabsVoices) {
+			config.set("misc.elevenLabsVoices.$key", value)
+		}
 
-		// Save the updated configuration to disk
+		config.set("misc.scheduleVoiceGenerationEnabled", scheduleVoiceGenerationEnabled)
+
 		plugin.saveConfig()
 	}
 }

@@ -6,6 +6,7 @@ import net.citizensnpcs.api.CitizensAPI
 import net.citizensnpcs.api.npc.NPC
 import net.citizensnpcs.trait.EntityPoseTrait
 import net.citizensnpcs.trait.RotationTrait
+import net.citizensnpcs.util.NMS
 import org.bukkit.Bukkit
 import org.bukkit.entity.Entity
 import org.bukkit.entity.Player
@@ -45,8 +46,9 @@ class NPCBehaviorManager(private val plugin: Story) {
 						reinitializeAllNPCs()
 					}
 
-					// Update behavior for all spawned NPCs
-					CitizensAPI.getNPCRegistry().forEach { npc ->
+					// Update behavior for NPCs that have players nearby (performance optimization)
+					val nearbyNPCs = getNearbyNPCsToActivePlayers()
+					nearbyNPCs.forEach { npc ->
 						try {
 							if (npc.isSpawned && npc.entity != null) {
 								updateNPCBehavior(npc)
@@ -150,41 +152,7 @@ class NPCBehaviorManager(private val plugin: Story) {
 							nearbyEntities[Random.nextInt(nearbyEntities.size)]
 						}
 
-					Bukkit.getScheduler().runTask(
-						plugin,
-						Runnable {
-							val rot = npc.getOrAddTrait(RotationTrait::class.java)
-
-							if (!npc.isSpawned) return@Runnable
-
-							// Get current yaw and calculate target yaw
-							val currentYaw =
-								net.citizensnpcs.util.NMS
-									.getHeadYaw(npc.entity)
-							val targetLocation = target.location
-
-							// Calculate yaw to target
-							val dx = targetLocation.x - npc.entity.location.x
-							val dz = targetLocation.z - npc.entity.location.z
-							val targetYaw = Math.toDegrees(Math.atan2(-dx, dz)).toFloat()
-
-							// Calculate yaw difference (normalized to -180 to 180)
-							var yawDiff = (targetYaw - currentYaw) % 360
-							if (yawDiff > 180) yawDiff -= 360
-							if (yawDiff < -180) yawDiff += 360
-
-							// Limit rotation to 60 degrees max for natural movement
-							val maxRotation = 60f
-							val limitedYaw =
-								if (Math.abs(yawDiff) > maxRotation) {
-									currentYaw + Math.signum(yawDiff.toDouble()).toFloat() * maxRotation
-								} else {
-									targetYaw
-								}
-
-							rot.physicalSession.rotateToHave(limitedYaw, 0f)
-						},
-					)
+					turnHead(npc, target)
 
 					// Show idle hologram sometimes when looking at entity
 					if (Random.nextDouble() < 0.2) { // 20% chance
@@ -239,6 +207,61 @@ class NPCBehaviorManager(private val plugin: Story) {
 
 		// Handle idle holograms independent of looking behavior
 		updateIdleHolograms(npc, currentTime)
+	}
+
+	fun turnHead(npc: NPC, target: Entity) {
+		Bukkit.getScheduler().runTask(
+			plugin,
+			Runnable {
+				val rot = npc.getOrAddTrait(RotationTrait::class.java)
+
+				if (!npc.isSpawned) return@Runnable
+
+				// Get current yaw and calculate target yaw
+				val currentYaw =
+					NMS
+						.getHeadYaw(npc.entity)
+				val targetLocation = target.location
+
+				// Calculate yaw to target
+				val dx = targetLocation.x - npc.entity.location.x
+				val dz = targetLocation.z - npc.entity.location.z
+				val targetYaw = Math.toDegrees(Math.atan2(-dx, dz)).toFloat()
+
+				// Calculate yaw difference (normalized to -180 to 180)
+				var yawDiff = (targetYaw - currentYaw) % 360
+				if (yawDiff > 180) yawDiff -= 360
+				if (yawDiff < -180) yawDiff += 360
+
+				// Limit rotation to 60 degrees max for natural movement
+				val maxRotation = 60f
+				val limitedYaw =
+					if (Math.abs(yawDiff) > maxRotation) {
+						currentYaw + Math.signum(yawDiff.toDouble()).toFloat() * maxRotation
+					} else {
+						targetYaw
+					}
+
+				rot.physicalSession.rotateToHave(limitedYaw, 0f)
+			},
+		)
+	}
+
+	/**
+	 * Gets all NPCs that are near active players to optimize processing
+	 * @return List of NPCs that are within range of at least one online player
+	 */
+	private fun getNearbyNPCsToActivePlayers(): List<NPC> {
+		val nearbyNPCs = mutableSetOf<NPC>()
+		val checkRadius = plugin.config.chatRadius * 2.0 // Use a larger radius for behavior checks
+
+		for (player in Bukkit.getOnlinePlayers()) {
+			// Get NPCs near this player
+			val playerNearbyNPCs = plugin.getNearbyNPCs(player, checkRadius)
+			nearbyNPCs.addAll(playerNearbyNPCs)
+		}
+
+		return nearbyNPCs.toList()
 	}
 
 	private fun getNearbyEntities(npc: NPC): List<Entity> {

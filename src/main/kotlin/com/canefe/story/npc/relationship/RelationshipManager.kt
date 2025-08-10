@@ -244,7 +244,7 @@ class RelationshipManager(private val plugin: Story) {
 			val relationship = getRelationship(npcName, targetName)
 
 			// Update relationship score based on memory significance
-			relationship.updateScore(relationshipImpact)
+			relationship.updateScore(relationshipImpact, memory)
 
 			// Store reference to the memory in the relationship
 			if (!relationship.memoryIds.contains(memory.id)) {
@@ -306,34 +306,104 @@ class RelationshipManager(private val plugin: Story) {
 	 * Find potential relationship targets mentioned in memory content
 	 */
 	private fun findRelationshipTargets(content: String): List<String> {
-		// Try AI-based extraction first
-		val aiTargets = extractTargetsWithAI(content)
-		if (aiTargets.isNotEmpty()) {
-			return aiTargets
-		}
-
-		// Fall back to regex matching if AI fails or returns empty
-		val targets = mutableListOf<String>()
 		val allNpcs = plugin.npcDataManager.getAllNPCNames()
 		val allPlayers = Bukkit.getOnlinePlayers().map { it.name }
+		val allValidNames = (allNpcs + allPlayers)
 
-		// Pattern matching fallback for NPCs
+		// Try AI-based extraction first
+		val aiTargets = extractTargetsWithAI(content)
+		val validAiTargets = findMatchingNames(aiTargets, allValidNames)
+
+		// If AI found valid targets, return them
+		if (validAiTargets.isNotEmpty()) {
+			return validAiTargets
+		}
+
+		// Fall back to regex matching if AI fails or returns no valid matches
+		val targets = mutableListOf<String>()
+
+		// Pattern matching fallback for NPCs (including partial matches)
 		for (npcName in allNpcs) {
-			val pattern = "\\b${Regex.escape(npcName)}\\b"
-			if (Regex(pattern, RegexOption.IGNORE_CASE).containsMatchIn(content)) {
+			if (isNameMentioned(npcName, content)) {
 				targets.add(npcName)
 			}
 		}
 
-		// Pattern matching fallback for players
+		// Pattern matching fallback for players (including partial matches)
 		for (playerName in allPlayers) {
-			val pattern = "\\b${Regex.escape(playerName)}\\b"
-			if (Regex(pattern, RegexOption.IGNORE_CASE).containsMatchIn(content)) {
+			if (isNameMentioned(playerName, content)) {
 				targets.add(playerName)
 			}
 		}
 
 		return targets
+	}
+
+	/**
+	 * Check if a name (or part of it) is mentioned in the content
+	 */
+	private fun isNameMentioned(fullName: String, content: String): Boolean {
+		// Check exact match first
+		val exactPattern = "\\b${Regex.escape(fullName)}\\b"
+		if (Regex(exactPattern, RegexOption.IGNORE_CASE).containsMatchIn(content)) {
+			return true
+		}
+
+		// Check for partial matches - split name by spaces and check each part
+		val nameParts = fullName.split(" ").filter { it.length > 2 } // Only consider parts longer than 2 chars
+
+		for (part in nameParts) {
+			// Skip common titles/prefixes that are too generic
+			if (part.lowercase() in listOf("elder", "lord", "lady", "sir", "master", "miss", "mrs", "mr", "dr", "the")) {
+				continue
+			}
+
+			val partPattern = "\\b${Regex.escape(part)}\\b"
+			if (Regex(partPattern, RegexOption.IGNORE_CASE).containsMatchIn(content)) {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	/**
+	 * Find matching names from AI targets against valid names, including partial matches
+	 */
+	private fun findMatchingNames(aiTargets: List<String>, validNames: List<String>): List<String> {
+		val matches = mutableListOf<String>()
+
+		for (aiTarget in aiTargets) {
+			// First try exact match (case insensitive)
+			val exactMatch = validNames.find { it.equals(aiTarget, ignoreCase = true) }
+			if (exactMatch != null) {
+				matches.add(exactMatch)
+				continue
+			}
+
+			// Try partial matching - see if aiTarget is part of any valid name
+			val partialMatch = validNames.find { validName ->
+				// Check if aiTarget is a significant part of validName
+				val aiTargetLower = aiTarget.lowercase()
+				val validNameLower = validName.lowercase()
+
+				// Skip if aiTarget is too short or is a common title
+				if (aiTargetLower.length <= 2 ||
+					aiTargetLower in listOf("elder", "lord", "lady", "sir", "master", "miss", "mrs", "mr", "dr", "the")
+				) {
+					return@find false
+				}
+
+				// Check if aiTarget appears as a word in validName
+				validNameLower.split(" ").any { it == aiTargetLower }
+			}
+
+			if (partialMatch != null) {
+				matches.add(partialMatch)
+			}
+		}
+
+		return matches.distinct()
 	}
 
 	private fun extractTargetsWithAI(content: String): List<String> {
@@ -392,10 +462,12 @@ class RelationshipManager(private val plugin: Story) {
 	/**
 	 * Generates a relationship label using AI based on the relationship's score and traits.
 	 */
-	fun generateRelationshipLabel(relationship: Relationship): CompletableFuture<String> {
+	fun generateRelationshipLabel(relationship: Relationship, memory: Memory?): CompletableFuture<String> {
 		val score = relationship.score
 		val traits = if (relationship.traits.isNotEmpty()) relationship.traits.joinToString(", ") else "none"
-		val memorySummary = "No specific memories provided for this label generation task yet." // Placeholder
+		val memorySummary = memory?.let {
+			"Recent memory: ${it.content} (strength: ${String.format("%.2f", it.getCurrentStrength(plugin.timeService))})"
+		} ?: "No recent memories."
 
 		val prompt =
 			"""

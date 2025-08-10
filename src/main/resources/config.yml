@@ -1,6 +1,19 @@
 openrouter:
   apikey: "your-api-key-here"
   aiModel: "gryphe/mythomax-l2-13b:extended"
+
+# Conversation settings
+conversation:
+  chatEnabled: true
+  radiantEnabled: true
+  radiantRadius: 5
+  radiantCooldown: 30
+  chatRadius: 5
+  responseDelay: 2.0
+  mythicMobsEnabled: true
+  streamMessages: true
+  behavioralDirectivesEnabled: true  # Whether to generate behavioral directives for NPCs before responses
+
 ai:
   defaultContext: ""
   chatFormat: "<gray>%npc_name% <italic>:</italic></gray> <white>%message%</white>"
@@ -113,4 +126,8 @@ ai:
     - speaks in rhyme
     - has a habit of humming to themselves
 
-
+# ElevenLabs voice integration settings
+elevenlabs:
+  api_key: "your-elevenlabs-api-key-here"
+  enabled: false  # Set to true to enable voice generation
+  # Voice mappings - use voice IDs from your ElevenLabs account

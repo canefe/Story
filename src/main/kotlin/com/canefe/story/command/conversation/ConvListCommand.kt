@@ -8,21 +8,18 @@ import net.kyori.adventure.text.Component
 import org.bukkit.Bukkit
 import org.bukkit.command.CommandSender
 
-class ConvListCommand(
-	private val commandUtils: ConvCommandUtils,
-) {
-	fun getCommand(): CommandAPICommand =
-		CommandAPICommand("list")
-			.withPermission("story.conv.list")
-			.executesPlayer(
-				PlayerCommandExecutor { player, _ ->
-					displayActiveConversations(player)
-				},
-			).executes(
-				CommandExecutor { sender, _ ->
-					displayActiveConversations(sender)
-				},
-			)
+class ConvListCommand(private val commandUtils: ConvCommandUtils) {
+	fun getCommand(): CommandAPICommand = CommandAPICommand("list")
+		.withPermission("story.conv.list")
+		.executesPlayer(
+			PlayerCommandExecutor { player, _ ->
+				displayActiveConversations(player)
+			},
+		).executes(
+			CommandExecutor { sender, _ ->
+				displayActiveConversations(sender)
+			},
+		)
 
 	private fun displayActiveConversations(player: CommandSender) {
 		player.sendMessage("  ")
@@ -72,11 +69,7 @@ class ConvListCommand(
 		}
 	}
 
-	private fun createConversationPrefix(
-		id: Int,
-		npcNames: List<String>,
-		playerNames: List<String>,
-	): List<Component> {
+	private fun createConversationPrefix(id: Int, npcNames: List<String>, playerNames: List<String>): List<Component> {
 		// Build the prefix with conversation ID
 		val miniMessage = commandUtils.mm
 		val componentList = mutableListOf<Component>()
@@ -98,10 +91,7 @@ class ConvListCommand(
 		return componentList
 	}
 
-	private fun createClickableNpcNames(
-		id: Int,
-		npcNames: List<String>,
-	): List<Component> {
+	private fun createClickableNpcNames(id: Int, npcNames: List<String>): List<Component> {
 		val miniMessage = commandUtils.mm
 		var clickableNames = Component.empty()
 		var first = true
@@ -135,19 +125,13 @@ class ConvListCommand(
 		return componentList
 	}
 
-	private fun calculatePadding(
-		currentName: String,
-		allNames: List<String>,
-	): Int {
+	private fun calculatePadding(currentName: String, allNames: List<String>): Int {
 		val longestNameLength = allNames.maxOfOrNull { it.length } ?: 0
 		return (longestNameLength - currentName.length) + 2 // 2 extra spaces for margin
 	}
 
 	// NPC-specific action buttons
-	private fun createNpcActionButtons(
-		id: Int,
-		npcName: String,
-	): Component {
+	private fun createNpcActionButtons(id: Int, npcName: String): Component {
 		// Build all the buttons
 		val feedButton =
 			commandUtils.createButton(
@@ -193,10 +177,7 @@ class ConvListCommand(
 	}
 
 	// Create action buttons
-	private fun createActionButtons(
-		id: Int,
-		npcNames: List<String>,
-	): Component {
+	private fun createActionButtons(id: Int, npcNames: List<String>): Component {
 		// Build all the buttons
 		val feedButton =
 			commandUtils.createButton(
@@ -270,9 +251,27 @@ class ConvListCommand(
 				"End conversation",
 			)
 
+		val endNoRememberButton =
+			commandUtils.createButton(
+				"N-End",
+				"#FFC0CB",
+				"run_command",
+				"/conv nend $id",
+				"End conversation without remembering",
+			)
+
 		// Combine all buttons with separators
 		return commandUtils.combineComponentsWithSeparator(
-			listOf(feedButton, talkButton, addButton, showContextButton, toggleButton, forceEndButton, endButton),
+			listOf(
+				feedButton,
+				talkButton,
+				addButton,
+				showContextButton,
+				toggleButton,
+				forceEndButton,
+				endButton,
+				endNoRememberButton,
+			),
 			"<gray> | </gray>",
 		)
 	}

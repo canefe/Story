@@ -9,10 +9,10 @@ import dev.jorel.commandapi.CommandAPICommand
 import dev.jorel.commandapi.arguments.IntegerArgument
 import dev.jorel.commandapi.executors.CommandExecutor
 import dev.jorel.commandapi.executors.PlayerCommandExecutor
+import org.bukkit.Bukkit
+import kotlin.text.get
 
-class ConvCommand(
-	private val plugin: Story,
-) : BaseCommand {
+class ConvCommand(private val plugin: Story) : BaseCommand {
 	private val commandUtils = ConvCommandUtils()
 
 	override fun register() {
@@ -33,6 +33,8 @@ class ConvCommand(
 			.withSubcommand(getToggleGlobalHearingSubcommand())
 			.withSubcommand(getContinueSubcommand())
 			.withSubcommand(getShowSubcommand())
+			.withSubcommand(getNendCommand())
+			.withSubcommand(getHistoryRemoveSubcommand())
 			.register()
 	}
 
@@ -60,86 +62,131 @@ class ConvCommand(
 
 	private fun getLockSubcommand(): CommandAPICommand = ConvLockCommand(commandUtils).getCommand()
 
-	private fun getContinueSubcommand(): CommandAPICommand =
-		CommandAPICommand("continue")
-			.withArguments(IntegerArgument("conversation_id"))
-			.executesPlayer(
-				PlayerCommandExecutor { player, args ->
-					val id = args["conversation_id"] as Int
-
-					val conversation =
-						commandUtils.conversationManager.getConversationById(id)
-							?: return@PlayerCommandExecutor player.sendError("Invalid conversation ID.")
-
-					player.sendSuccess("Continuing conversation with ID $id...")
-					plugin.conversationManager.generateResponses(conversation)
-				},
-			)
-
-	private fun getShowSubcommand(): CommandAPICommand =
-		CommandAPICommand("show")
+	private fun getNendCommand(): CommandAPICommand {
+		return CommandAPICommand("nend")
 			.withArguments(IntegerArgument("conversation_id"))
 			.executes(
 				CommandExecutor { sender, args ->
-					val id = args["conversation_id"] as Int
+					val id = args.get("conversation_id") as Int
+					val mm = commandUtils.mm
 
-					val conversation =
-						commandUtils.conversationManager.getConversationById(id)
-							?: return@CommandExecutor sender.sendError("Invalid conversation ID.")
+					// Get conversation
+					val convo =
+						commandUtils.getConversation(id, sender)
+							?: return@CommandExecutor
 
-					sender.sendRaw("<gray>=====<green>[${conversation.id}]</green>=====</gray>")
-					for (message in conversation.history) {
-						if (message.content === "...") {
-							continue
-						}
-						if (message.role == "system") {
-							sender.sendRaw("<gray><i>${message.content}</i>")
-						} else if (message.role == "user") {
-							// extract until ':' from the message and the rest is the content (the first : only)
-							val name = message.content.substringBefore(":")
-							val content = message.content.substringAfter(":")
-							// in the content format words between *words* as <gray><i>words</i></gray>
-							val formattedContent =
-								content.replace(
-									Regex("\\*(.*?)\\*"),
-									"<gray><i>$1</i></gray>",
-								)
-							sender.sendRaw("<green>$name:</green> <yellow>$formattedContent</yellow>")
-						} else if (message.role == "assistant") {
-							// extract until ':' from the message and the rest is the content (the first : only)
-							val name = message.content.substringBefore(":")
-							val content = message.content.substringAfter(":")
-							val formattedContent =
-								content.replace(
-									Regex("\\*(.*?)\\*"),
-									"<gray><i>$1</i></gray>",
-								)
-							sender.sendRaw("<green>$name:</green> <aqua>$formattedContent</aqua>")
-						}
-					}
-
-					// Show the conversation history for the sender
+					// End conversation
+					commandUtils.conversationManager.endConversation(convo, dontRemember = true)
+					sender.sendMessage(mm.deserialize("<green>Conversation ended.</green>"))
 				},
 			)
+	}
 
-	private fun getToggleGlobalHearingSubcommand(): CommandAPICommand =
-		CommandAPICommand("toggleglobal")
-			.executesPlayer(
-				PlayerCommandExecutor { player, _ ->
+	private fun getContinueSubcommand(): CommandAPICommand = CommandAPICommand("continue")
+		.withArguments(IntegerArgument("conversation_id"))
+		.executesPlayer(
+			PlayerCommandExecutor { player, args ->
+				val id = args["conversation_id"] as Int
 
-					val disabledHearing = commandUtils.story.playerManager.disabledHearing
+				val conversation =
+					commandUtils.conversationManager.getConversationById(id)
+						?: return@PlayerCommandExecutor player.sendError("Invalid conversation ID.")
 
-					val isGlobalHearingEnabled = !disabledHearing.contains(player.uniqueId)
+				player.sendSuccess("Continuing conversation with ID $id...")
+				plugin.conversationManager.generateResponses(conversation)
+			},
+		)
 
-					if (isGlobalHearingEnabled) {
-						disabledHearing.add(player.uniqueId)
+	private fun getShowSubcommand(): CommandAPICommand = CommandAPICommand("show")
+		.withArguments(IntegerArgument("conversation_id"))
+		.executes(
+			CommandExecutor { sender, args ->
+				val id = args["conversation_id"] as Int
 
-						player.sendMessage("Global hearing disabled.")
-					} else {
-						disabledHearing.remove(player.uniqueId)
+				val conversation =
+					commandUtils.conversationManager.getConversationById(id)
+						?: return@CommandExecutor sender.sendError("Invalid conversation ID.")
 
-						player.sendMessage("Global hearing enabled.")
+				sender.sendRaw("<gray>=====<green>[${conversation.id}]</green>=====</gray>")
+
+				conversation.history.forEachIndexed { index, message ->
+					if (message.content === "...") {
+						return@forEachIndexed
 					}
-				},
-			)
+
+					val deleteButton = "<red>[<click:run_command:/conv hisremove $id $index>-</click>]</red> "
+
+					if (message.role == "system") {
+						sender.sendRaw("$deleteButton<gray><i>${message.content}</i></gray>")
+					} else if (message.role == "user") {
+						val name = message.content.substringBefore(":")
+						val content = message.content.substringAfter(":")
+						val formattedContent = content.replace(
+							Regex("\\*(.*?)\\*"),
+							"<gray><i>$1</i></gray>",
+						)
+						sender.sendRaw("$deleteButton<green>$name:</green> <yellow>$formattedContent</yellow>")
+					} else if (message.role == "assistant") {
+						val name = message.content.substringBefore(":")
+						val content = message.content.substringAfter(":")
+						val formattedContent = content.replace(
+							Regex("\\*(.*?)\\*"),
+							"<gray><i>$1</i></gray>",
+						)
+						sender.sendRaw("$deleteButton<green>$name:</green> <white>$formattedContent</white>")
+					}
+				}
+			},
+		)
+
+	private fun getHistoryRemoveSubcommand(): CommandAPICommand = CommandAPICommand("hisremove")
+		.withArguments(IntegerArgument("conversation_id"))
+		.withArguments(IntegerArgument("message_index"))
+		.executes(
+			CommandExecutor { sender, args ->
+				val id = args["conversation_id"] as Int
+				val index = args["message_index"] as Int
+
+				val conversation =
+					commandUtils.conversationManager.getConversationById(id)
+						?: return@CommandExecutor sender.sendError("Invalid conversation ID.")
+
+				if (index < 0 || index >= conversation.history.size) {
+					return@CommandExecutor sender.sendError("Invalid message index.")
+				}
+
+				// Need to modify Conversation to support this
+				if (conversation.removeHistoryMessageAt(index)) {
+					sender.sendSuccess("Message removed from conversation history.")
+				} else {
+					sender.sendError("Failed to remove message from conversation history.")
+				}
+
+				// Make them execute the show command to see the changes
+				Bukkit.dispatchCommand(
+					sender,
+					"conv show $id",
+				)
+			},
+		)
+
+	private fun getToggleGlobalHearingSubcommand(): CommandAPICommand = CommandAPICommand("toggleglobal")
+		.executesPlayer(
+			PlayerCommandExecutor { player, _ ->
+
+				val disabledHearing = commandUtils.story.playerManager.disabledHearing
+
+				val isGlobalHearingEnabled = !disabledHearing.contains(player.uniqueId)
+
+				if (isGlobalHearingEnabled) {
+					disabledHearing.add(player.uniqueId)
+
+					player.sendMessage("Global hearing disabled.")
+				} else {
+					disabledHearing.remove(player.uniqueId)
+
+					player.sendMessage("Global hearing enabled.")
+				}
+			},
+		)
 }

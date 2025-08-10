@@ -9,9 +9,15 @@ class LocationCommand(private val plugin: Story) {
 	fun getCommand(): CommandAPICommand = CommandAPICommand("location")
 		.withPermission("story.location")
 		.withUsage(
-			"/story location <create> <name>",
+			"/story location <create|find|call> [arguments]",
 		)
 		.withSubcommand(getCreateLocationCommand())
+		.withSubcommand(getFindLocationCommand())
+		.withSubcommand(getCallLocationCommand())
 
 	private fun getCreateLocationCommand(): CommandAPICommand = CreateLocationCommand(commandUtils).getCommand()
+
+	private fun getFindLocationCommand(): CommandAPICommand = FindLocationCommand(commandUtils).getCommand()
+
+	private fun getCallLocationCommand(): CommandAPICommand = CallLocationCommand(commandUtils).getCommand()
 }

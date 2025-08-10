@@ -1,5 +1,6 @@
 import com.canefe.story.Story
 import com.canefe.story.api.event.*
+import com.canefe.story.audio.VoiceManager
 import com.canefe.story.conversation.*
 import com.canefe.story.information.ConversationInformationSource
 import com.canefe.story.information.WorldInformationManager
@@ -24,6 +25,7 @@ class ConversationManager private constructor(
 ) {
 	private val repository = ConversationRepository()
 	private val hologramManager = ConversationHologramManager(plugin)
+	private val voiceManager = VoiceManager(plugin) // Add VoiceManager
 
 	// Map to store scheduled tasks by conversation
 	private val scheduledTasks = mutableMapOf<Conversation, Int>()
@@ -111,6 +113,45 @@ class ConversationManager private constructor(
 		return CompletableFuture.completedFuture(conversation)
 	}
 
+	// Start player-to-player conversation (no NPCs required)
+	fun startPlayerConversation(initiatingPlayer: Player, targetPlayers: List<Player>): Conversation {
+		// Check if initiating player is already in a conversation and end it
+		val existingConversation = repository.getConversationByPlayer(initiatingPlayer)
+		existingConversation?.let {
+			endConversation(it)
+		}
+
+		// Create participant list including the initiating player
+		val participants = mutableListOf(initiatingPlayer.uniqueId)
+		participants.addAll(targetPlayers.map { it.uniqueId })
+
+		// Create a new conversation with no NPCs
+		val conversation = Conversation(
+			_players = participants,
+			initialNPCs = emptyList(),
+		)
+
+		// If chat is not enabled, allow manual conversation
+		if (!plugin.config.chatEnabled) {
+			conversation.chatEnabled = false
+		}
+
+		// Add to repository
+		repository.addConversation(conversation)
+
+		// Schedule proximity check for this conversation
+		scheduleProximityCheck(conversation)
+
+		// Notify all players in the conversation
+		val allPlayers = listOf(initiatingPlayer) + targetPlayers
+		val playerNames = allPlayers.joinToString(", ") { it.name }
+		allPlayers.forEach { player ->
+			player.sendInfo("You are now in a conversation with: <yellow>$playerNames</yellow>")
+		}
+
+		return conversation
+	}
+
 	fun endConversationWithGoodbye(conversation: Conversation, goodbyeContext: List<String>? = null) {
 		// Get a random NPC
 		val npc =
@@ -153,7 +194,7 @@ class ConversationManager private constructor(
 		)
 	}
 
-	fun endConversation(conversation: Conversation): CompletableFuture<Void> {
+	fun endConversation(conversation: Conversation, dontRemember: Boolean = false): CompletableFuture<Void> {
 		// Check if the conversation is already being ended
 		if (endingConversations.contains(conversation.id)) {
 			// Return a completed future since the conversation is already being ended
@@ -190,7 +231,7 @@ class ConversationManager private constructor(
 		val userMessageCount =
 			conversation.history.count { it.role != "system" }
 		// Only process conversation data if significant
-		if (userMessageCount > 2) {
+		if (userMessageCount > 2 && !dontRemember) {
 			conversation.players.forEach { uuid ->
 				val player = Bukkit.getPlayer(uuid)
 				player?.sendInfo("<i>The conversation is ending...")
@@ -409,32 +450,52 @@ class ConversationManager private constructor(
 							return@Runnable
 						}
 
-						// Check each player's proximity to NPCs in the conversation
+						// Check each player's proximity to NPCs and other players in the conversation
 						val playersToRemove = mutableListOf<Player>()
 
 						for (playerId in conversation.players) {
 							val player = Bukkit.getPlayer(playerId) ?: continue
 
-							// Check if player is still near any NPC in the conversation
-							var isNearAnyNPC = false
+							// Check if player is still near any NPC or other player in the conversation
+							var isNearAnyParticipant = false
 
+							// Check proximity to NPCs
 							for (npc in conversation.npcs) {
 								val npcEntity = getRealEntityForNPC(npc) ?: continue
 
-								var npcLoc = npcEntity.location
+								val npcLoc = npcEntity.location
 								val playerLoc = player.location
 
 								// Check if player and NPC are in the same world and within range
 								if (playerLoc.world == npcLoc.world &&
 									playerLoc.distance(npcLoc) <= maxDistance
 								) {
-									isNearAnyNPC = true
+									isNearAnyParticipant = true
 									break
 								}
 							}
 
-							// If player is not near any NPC, mark for removal
-							if (!isNearAnyNPC) {
+							// If not near any NPC, check proximity to other players in the conversation
+							if (!isNearAnyParticipant) {
+								for (otherPlayerId in conversation.players) {
+									if (otherPlayerId == playerId) continue // Skip self
+
+									val otherPlayer = Bukkit.getPlayer(otherPlayerId) ?: continue
+									val otherPlayerLoc = otherPlayer.location
+									val playerLoc = player.location
+
+									// Check if players are in the same world and within range
+									if (playerLoc.world == otherPlayerLoc.world &&
+										playerLoc.distance(otherPlayerLoc) <= maxDistance
+									) {
+										isNearAnyParticipant = true
+										break
+									}
+								}
+							}
+
+							// If player is not near any participant (NPC or other player), mark for removal
+							if (!isNearAnyParticipant) {
 								playersToRemove.add(player)
 							}
 						}
@@ -762,11 +823,16 @@ class ConversationManager private constructor(
 					// Show holograms for the NPCs
 					handleHolograms(conversation, nextSpeaker)
 
-					// First generate behavioral directive to guide the response
-					npcResponseService
-						.generateBehavioralDirective(conversation, npcEntity)
+					// First generate behavioral directive to guide the response (if enabled)
+					val directiveFuture = if (plugin.config.behavioralDirectivesEnabled) {
+						npcResponseService.generateBehavioralDirective(conversation, npcEntity)
+					} else {
+						CompletableFuture.completedFuture("") // Return empty directive
+					}
+
+					directiveFuture
 						.thenAccept { directive ->
-							// Add the directive as a system message to guide the response
+							// Add the directive as a system message to guide the response (only if not empty)
 							if (directive.isNotEmpty()) {
 								conversation.addSystemMessage(directive)
 							}

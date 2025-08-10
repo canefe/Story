@@ -9,10 +9,10 @@ import org.bukkit.configuration.file.YamlConfiguration
 import java.io.File
 import java.io.IOException
 import java.time.Instant
+import kotlin.text.set
+import kotlin.toString
 
-class NPCDataManager private constructor(
-	private val plugin: Story,
-) {
+class NPCDataManager private constructor(private val plugin: Story) {
 	private val npcDataCache: MutableMap<String, NPCData> = HashMap()
 	private val npcDataMigrator = NPCDataMigrator(plugin)
 
@@ -86,7 +86,21 @@ class NPCDataManager private constructor(
 			val context = config.getString("context") ?: ""
 			val appearance = config.getString("appearance") ?: ""
 			val avatar = config.getString("avatar") ?: ""
-			val knowledgeCategories = config.getStringList("knowledgeCategories").map { it.toString() }
+			val customVoice = config.getString("customVoice") // Load custom voice
+			// Handle knowledge categories in both formats (list or section)
+			val knowledgeCategories = mutableListOf<String>()
+			val categoriesSection = config.getConfigurationSection("knowledgeCategories")
+
+			if (categoriesSection != null) {
+				// New format: load from section with proper indentation
+				categoriesSection.getKeys(false).forEach { key ->
+					val category = categoriesSection.getString(key)
+					if (category != null) knowledgeCategories.add(category)
+				}
+			} else {
+				// Old format: try to load as a list
+				knowledgeCategories.addAll(config.getStringList("knowledgeCategories").map { it.toString() })
+			}
 			val randomPathing = config.getBoolean("randomPathing", true)
 
 			val storyLocation =
@@ -105,6 +119,8 @@ class NPCDataManager private constructor(
 			npcData.avatar = avatar
 			npcData.knowledgeCategories = knowledgeCategories
 			npcData.appearance = appearance
+			npcData.randomPathing = randomPathing
+			npcData.customVoice = customVoice // Set custom voice
 
 			// Check if the NPC data is in old format and needs migration
 			if (npcDataMigrator.isOldFormat(npcData)) {
@@ -138,11 +154,7 @@ class NPCDataManager private constructor(
 		}
 	}
 
-	fun createMemoryForNPC(
-		npcName: String,
-		content: String,
-		significance: Double = 1.0,
-	) {
+	fun createMemoryForNPC(npcName: String, content: String, significance: Double = 1.0) {
 		val npcData = getNPCData(npcName) ?: return
 
 		val memory =
@@ -217,10 +229,7 @@ class NPCDataManager private constructor(
 		return memories
 	}
 
-	fun saveNPCData(
-		npcName: String,
-		npcData: NPCData,
-	) {
+	fun saveNPCData(npcName: String, npcData: NPCData) {
 		val npcFile = File(npcDirectory, "$npcName.yml")
 		val config = YamlConfiguration()
 
@@ -230,6 +239,7 @@ class NPCDataManager private constructor(
 		config.set("location", npcData.storyLocation?.name)
 		config.set("context", npcData.context)
 		config.set("appearance", npcData.appearance)
+		config.set("customVoice", npcData.customVoice) // Save custom voice
 
 		// Save memories in structured format
 		if (npcData.memory.isNotEmpty()) {
@@ -260,7 +270,14 @@ class NPCDataManager private constructor(
 
 		// Other properties
 		config.set("avatar", npcData.avatar)
-		config.set("knowledgeCategories", npcData.knowledgeCategories)
+
+		// Save knowledge categories as a proper indented list
+		if (npcData.knowledgeCategories.isNotEmpty()) {
+			// Convert the list to ArrayList to ensure proper serialization
+			val categoryList = ArrayList<String>(npcData.knowledgeCategories)
+			config.set("knowledgeCategories", categoryList)
+		}
+
 		config.set("randomPathing", npcData.randomPathing)
 
 		try {
@@ -271,10 +288,7 @@ class NPCDataManager private constructor(
 		}
 	}
 
-	fun saveNPCFile(
-		npcName: String,
-		config: FileConfiguration,
-	) {
+	fun saveNPCFile(npcName: String, config: FileConfiguration) {
 		val npcFile = File(npcDirectory, "$npcName.yml")
 		try {
 			config.save(npcFile)

@@ -184,6 +184,10 @@ class ConversationHologramManager(private val plugin: Story) {
 							npc.entity.location
 								.clone()
 								.add(0.0, 2.10, 0.0)
+						// check if hologram is null and if so, return
+						if (DHAPI.getHologram(npcUUID) == null) {
+							return@Runnable
+						}
 						DHAPI.moveHologram(DHAPI.getHologram(npcUUID), updatedPos)
 					},
 					0L,

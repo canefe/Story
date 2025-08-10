@@ -18,24 +18,19 @@ data class NPCContext(
 	val avatar: String,
 	val memories: List<Memory>,
 	val relationships: Map<String, Relationship> = emptyMap(),
+	val customVoice: String? = null, // Custom voice ID for this NPC
 ) {
 	// Helper methods for memory access that accept timeService as parameter
-	private fun getStrongestMemories(
-		timeService: TimeService,
-		limit: Int = 5,
-	): List<Memory> = memories.sortedByDescending { it.getCurrentStrength(timeService) }.take(limit)
+	private fun getStrongestMemories(timeService: TimeService, limit: Int = 5): List<Memory> =
+		memories.sortedByDescending { it.getCurrentStrength(timeService) }.take(limit)
 
-	private fun getRecentMemories(limit: Int = 5): List<Memory> =
-		memories
-			.sortedByDescending {
-				it.gameCreatedAt
-			}.take(limit)
+	private fun getRecentMemories(limit: Int = 5): List<Memory> = memories
+		.sortedByDescending {
+			it.gameCreatedAt
+		}.take(limit)
 
 	// Convert memories to a format suitable for AI prompts, including relationship information
-	fun getMemoriesForPrompt(
-		timeService: TimeService,
-		limit: Int = 10,
-	): String {
+	fun getMemoriesForPrompt(timeService: TimeService, limit: Int = 10): String {
 		// Add both strongest and recent memories, filter out duplicates
 		val relevantMemories = (getStrongestMemories(timeService, limit) + getRecentMemories(limit)).distinctBy { it.id }
 

@@ -8,7 +8,6 @@ import com.canefe.story.util.Msg.sendSuccess
 import net.citizensnpcs.api.CitizensAPI
 import net.citizensnpcs.api.ai.event.NavigationCompleteEvent
 import net.citizensnpcs.api.npc.NPC
-import net.citizensnpcs.trait.RotationTrait
 import org.bukkit.Bukkit
 import org.bukkit.Location
 import org.bukkit.attribute.Attribute
@@ -188,8 +187,6 @@ class NPCManager private constructor(private val plugin: Story) : Listener {
 			}, 10L, 10L)
 	}
 
-	// Other methods (walkToNPC, makeNPCFaceLocation, isNearTarget, etc.) remain the same
-
 	/**
 	 * Makes an NPC walk to another NPC and initiate conversation
 	 */
@@ -222,16 +219,27 @@ class NPCManager private constructor(private val plugin: Story) : Listener {
 					npcs.add(initiator)
 					npcs.add(target)
 
+					val responseDelay = 4.toLong() // Delay in seconds before NPC responds
+
 					if (radiant) {
 						plugin.conversationManager.startRadiantConversation(npcs).thenAccept { conversation ->
 							// Add the first message to the conversation
 							conversation.addNPCMessage(initiator, firstMessage)
 							// Get A list of string only from conversation.history
 							val history = conversation.history.map { it.content }
-							plugin.npcResponseService.generateNPCResponse(target, history).thenAccept { response ->
-								// Add the response to the conversation
-								conversation.addNPCMessage(target, response)
-							}
+							plugin.conversationManager.handleHolograms(conversation, target.name)
+							// Generate the NPC response after a delay
+							Bukkit.getScheduler().scheduleSyncDelayedTask(plugin, {
+								// Generate the NPC response
+								plugin.npcResponseService.generateNPCResponse(target, history, broadcast = false)
+									.thenAccept { response ->
+										// Add the response to the conversation
+										conversation.addNPCMessage(target, response)
+										plugin.conversationManager.cleanupHolograms(conversation)
+										// Broadcast the response to players
+										plugin.npcMessageService.broadcastNPCMessage(response, target)
+									}
+							}, responseDelay * 20L) // Convert seconds to ticks
 						}
 					} else {
 						plugin.conversationManager.startConversation(npcs).thenAccept { conversation ->
@@ -541,8 +549,8 @@ class NPCManager private constructor(private val plugin: Story) : Listener {
 		}
 
 		// Variables for tracking movement
-		val lastLocationHolder = arrayOf(npc.entity.location)
-		val stuckCounter = intArrayOf(0)
+		var lastLocation = npc.entity.location
+		var stuckCounter = 0
 		val taskIdHolder = intArrayOf(-1)
 
 		// Navigation monitoring task
@@ -564,25 +572,36 @@ class NPCManager private constructor(private val plugin: Story) : Listener {
 
 				val currentLocation = npc.entity.location
 
-				// Check if reached destination
+				// Check if reached destination (use consistent distance margin)
 				val distanceToTarget = currentLocation.distance(targetLocation)
-				if (distanceToTarget <= distanceMargin * 2) {
+				if (distanceToTarget <= distanceMargin) {
 					Bukkit.getScheduler().cancelTask(taskIdHolder[0])
 					navigator.cancelNavigation()
-					val rot = npc.getOrAddTrait(RotationTrait::class.java)
-					rot.physicalSession.rotateToFace(targetLocation)
 					onArrival?.run()
 					return@scheduleSyncRepeatingTask
 				}
 
-				// Check if stuck and reestablish navigation if needed
+				// Check if NPC is stuck (hasn't moved significantly)
+				if (currentLocation.distance(lastLocation) < 0.5) {
+					stuckCounter++
+					if (stuckCounter >= 3) { // If stuck for 3 seconds
+						// Try to reestablish navigation
+						navigator.cancelNavigation()
+						navigator.setTarget(targetLocation)
+						stuckCounter = 0 // Reset counter after attempting to fix
+					}
+				} else {
+					stuckCounter = 0 // Reset counter if NPC is moving
+				}
+
+				// Check if navigation stopped and reestablish if needed
 				if (!navigator.isNavigating) {
 					navigator.cancelNavigation()
 					navigator.setTarget(targetLocation)
 				}
 
 				// Update last location
-				lastLocationHolder[0] = currentLocation
+				lastLocation = currentLocation
 			}, 20L, 20L) // Check every second
 
 		// Set timeout if specified
@@ -645,8 +664,8 @@ class NPCManager private constructor(private val plugin: Story) : Listener {
 		}
 
 		// Variables for tracking movement
-		val lastLocationHolder = arrayOf(npc.entity.location)
-		val stuckCounter = intArrayOf(0)
+		var lastLocation = npc.entity.location
+		var stuckCounter = 0
 		val taskIdHolder = intArrayOf(-1)
 
 		// Navigation monitoring task
@@ -659,9 +678,24 @@ class NPCManager private constructor(private val plugin: Story) : Listener {
 					return@scheduleSyncRepeatingTask
 				}
 
+				// Check if NPC is in a conversation
+				if (plugin.conversationManager.isInConversation(npc)) {
+					Bukkit.getScheduler().cancelTask(taskIdHolder[0])
+					navigator.cancelNavigation()
+					return@scheduleSyncRepeatingTask
+				}
+
+				// Check if target is still valid
+				if (!target.isValid) {
+					Bukkit.getScheduler().cancelTask(taskIdHolder[0])
+					navigator.cancelNavigation()
+					onFailed?.run()
+					return@scheduleSyncRepeatingTask
+				}
+
 				val currentLocation = npc.entity.location
 
-				// Check if reached destination
+				// Check if reached destination (use consistent distance margin)
 				val distanceToTarget = currentLocation.distance(target.location)
 				if (distanceToTarget <= distanceMargin) {
 					Bukkit.getScheduler().cancelTask(taskIdHolder[0])
@@ -670,14 +704,27 @@ class NPCManager private constructor(private val plugin: Story) : Listener {
 					return@scheduleSyncRepeatingTask
 				}
 
-				// Check if stuck and reestablish navigation if needed
+				// Check if NPC is stuck (hasn't moved significantly)
+				if (currentLocation.distance(lastLocation) < 0.5) {
+					stuckCounter++
+					if (stuckCounter >= 3) { // If stuck for 3 seconds
+						// Try to reestablish navigation
+						navigator.cancelNavigation()
+						navigator.setTarget(target, false)
+						stuckCounter = 0 // Reset counter after attempting to fix
+					}
+				} else {
+					stuckCounter = 0 // Reset counter if NPC is moving
+				}
+
+				// Check if navigation stopped and reestablish if needed
 				if (!navigator.isNavigating) {
 					navigator.cancelNavigation()
 					navigator.setTarget(target, false)
 				}
 
 				// Update last location
-				lastLocationHolder[0] = currentLocation
+				lastLocation = currentLocation
 			}, 20L, 20L) // Check every second
 
 		// Set timeout if specified

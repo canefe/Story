@@ -3,6 +3,8 @@ package com.canefe.story
 import ConversationManager
 import com.canefe.story.api.StoryAPI
 import com.canefe.story.audio.AudioManager
+import com.canefe.story.audio.VoiceManager
+import com.canefe.story.character.skill.SkillManager
 import com.canefe.story.command.base.CommandManager
 import com.canefe.story.command.story.quest.QuestCommandUtils
 import com.canefe.story.config.ConfigService
@@ -142,7 +144,11 @@ class Story :
 
 	lateinit var aiDungeonMaster: AIDungeonMaster
 
+	lateinit var skillManager: SkillManager
+
 	private var webUIServer: WebUIServer? = null
+
+	lateinit var voiceManager: VoiceManager
 
 	// lateinit var aiDungeonMaster: AIDungeonMaster
 
@@ -190,7 +196,7 @@ class Story :
 		radiantConversationService.startProximityTask()
 
 		server.pluginManager.registerEvents(QuestListener(this), this)
-		initializeWebUIServer()
+		// initializeWebUIServer()
 		// Load configuration
 		configService.reload()
 		PlaceholderContainer.STRING.addPlaceholder("disguise_name") { e ->
@@ -295,6 +301,10 @@ class Story :
 
 		aiDungeonMaster = AIDungeonMaster(this)
 		// aiDungeonMaster.initialize()
+
+		skillManager = SkillManager(this)
+
+		voiceManager = VoiceManager(this)
 	}
 
 	private fun registerQuestBookListener() {

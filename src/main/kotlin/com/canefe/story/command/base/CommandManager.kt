@@ -18,10 +18,12 @@ import dev.jorel.commandapi.arguments.*
 import dev.jorel.commandapi.executors.CommandArguments
 import dev.jorel.commandapi.executors.CommandExecutor
 import dev.jorel.commandapi.executors.PlayerCommandExecutor
+import io.lumine.mythic.bukkit.MythicBukkit
 import net.citizensnpcs.api.CitizensAPI
 import net.citizensnpcs.api.npc.NPC
 import net.citizensnpcs.trait.FollowTrait
 import org.bukkit.Bukkit
+import org.bukkit.entity.Entity
 import org.bukkit.entity.Player
 import org.mcmonkey.sentinel.SentinelTrait
 import java.util.UUID
@@ -488,16 +490,36 @@ class CommandManager(private val plugin: Story) {
 
 		fun talkAsNPC(player: Player, npcUniqueId: UUID, message: String) {
 			// Check if NPC exists
-			val npc = CitizensAPI.getNPCRegistry().getByUniqueId(npcUniqueId)
-			if (npc == null) {
+			var npc = CitizensAPI.getNPCRegistry().getByUniqueId(npcUniqueId)
+			val isMythicMob = MythicBukkit.inst().mobManager.mobRegistry.get(npcUniqueId) != null
+			if (npc == null && !isMythicMob) {
 				player.sendError("NPC not found.")
 				throw CommandAPI.failWithString("NPC not found.")
 			}
 
-			val npcName = npc.name
+			if (isMythicMob) {
+				// If it's a MythicMob, we need to get the NPC from the MythicMobs API
+				val entity = MythicBukkit.inst().mobManager.mobRegistry.get(npcUniqueId)?.entity?.bukkitEntity
+				npc = plugin.mythicMobConversation.getOrCreateNPCAdapter(entity as Entity)
+			}
+
+			val npcName = if (isMythicMob) {
+				// If it's a MythicMob, use its internal name
+				MythicBukkit.inst().mobManager.mobRegistry.get(npcUniqueId)?.name ?: "Unknown"
+			} else {
+				npc.name ?: "Unknown"
+			}
 			val chatRadius = plugin.config.chatRadius
-			val isImpersonated = plugin.disguiseManager.isNPCBeingImpersonated(npc)
-			val impersonator = plugin.disguiseManager.getDisguisedPlayer(npc)
+			val isImpersonated = if (!isMythicMob) {
+				plugin.disguiseManager.isNPCBeingImpersonated(npc)
+			} else {
+				false
+			}
+			val impersonator = if (!isMythicMob) {
+				plugin.disguiseManager.getDisguisedPlayer(npc)
+			} else {
+				null
+			}
 			val conversation =
 				plugin.conversationManager.getConversation(npcName) ?: run {
 					// create new conversation with nearby NPCs and players

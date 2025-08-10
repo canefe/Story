@@ -86,8 +86,15 @@ class NPCScheduleManager private constructor(private val plugin: Story) {
 				val time = timeKey.toInt()
 				val locationName = config.getString("schedule.$timeKey.location")
 				val action = config.getString("schedule.$timeKey.action", "idle")
-				val dialogue = config.getString("schedule.$timeKey.dialogue")
 				val random = config.getBoolean("schedule.$timeKey.random", false)
+
+				// Handle dialogue as a list or convert single string to list
+				val dialogue = if (config.isList("schedule.$timeKey.dialogue")) {
+					config.getStringList("schedule.$timeKey.dialogue")
+				} else {
+					val singleDialogue = config.getString("schedule.$timeKey.dialogue")
+					if (singleDialogue.isNullOrEmpty()) null else listOf(singleDialogue)
+				}
 
 				val entry = ScheduleEntry(time, locationName, action, dialogue, random)
 				schedule.addEntry(entry)
@@ -125,7 +132,7 @@ class NPCScheduleManager private constructor(private val plugin: Story) {
 		val schedule = NPCSchedule(npcName)
 
 		for (hour in listOf(6, 12, 18, 19, 20, 22, 24)) {
-			schedule.addEntry(ScheduleEntry(hour, "", "idle", ""))
+			schedule.addEntry(ScheduleEntry(hour, "", "idle", emptyList(), false))
 		}
 		return schedule
 	}
@@ -136,6 +143,8 @@ class NPCScheduleManager private constructor(private val plugin: Story) {
 		// Stop any existing task
 		scheduleTask?.cancel()
 
+		// npcMovementQueue.clear()
+
 		// Run every minute to check for schedule updates
 		scheduleTask =
 			object : BukkitRunnable() {
@@ -144,80 +153,74 @@ class NPCScheduleManager private constructor(private val plugin: Story) {
 					if (plugin.server.onlinePlayers.isEmpty()) {
 						return
 					}
-					val players = plugin.server.onlinePlayers
-					val gameTime = plugin.server.worlds[0].time
+
+					// if both random pathing and schedule are disabled, skip the check
+					if (!plugin.config.randomPathingEnabled && !plugin.config.scheduleEnabled) {
+						return
+					}
+
 					val debugMessages = plugin.config.debugMessages
 
 					// Convert to 24-hour format (0-23)
-					val hour = ((gameTime / 1000 + 6) % 24).toInt() // +6 because MC day starts at 6am
+					val hour = plugin.timeService.getHours()
+
+					// Get all NPCs near active players to avoid checking irrelevant NPCs
+					val nearbyNPCs = getNearbyNPCsToActivePlayers()
+
+					if (debugMessages) {
+						plugin.logger.info("Found ${nearbyNPCs.size} NPCs near active players at hour $hour.")
+					}
 
 					// Handle NPCs with schedules
 					if (plugin.config.scheduleEnabled) {
-						for (schedule in schedules.values) {
-							val currentEntry = schedule.getEntryForTime(hour)
-							if (currentEntry != null) {
-								executeScheduleEntry(schedule.npcName, currentEntry)
+						for (npc in nearbyNPCs) {
+							val schedule = schedules[npc.name.lowercase()]
+							if (schedule != null) {
+								val currentEntry = schedule.getEntryForTime(hour)
+								if (currentEntry != null) {
+									executeScheduleEntry(schedule.npcName, currentEntry)
+								}
 							}
 						}
 					}
 
-// Handle NPCs without schedules or with empty location entries
+					// Handle NPCs without schedules or with empty location entries for random pathing
 					if (plugin.config.randomPathingEnabled) {
-						// Pre-filter NPCs that are candidates for random movement
-						val candidateNPCs =
-							plugin.npcDataManager
-								.getAllNPCNames()
-								.asSequence()
-								.filter { npcName ->
-									val npc = plugin.npcDataManager.getNPC(npcName) ?: return@filter false
-									// also teleport nearby storedLocation npcs (that are not spawned) we check if its
-									// still close to the player
-									val currentLocation = npc.entity?.location ?: npc.getOrAddTrait(CurrentLocation::class.java).location
+						// Filter nearby NPCs that are candidates for random movement
+						val candidateNPCs = nearbyNPCs.filter { npc ->
+							val currentLocation = npc.entity?.location ?: npc.getOrAddTrait(CurrentLocation::class.java).location
 
-									if (currentLocation == null) {
-										plugin.logger.warning("NPC $npcName has no location, skipping.")
-										return@filter false
-									}
+							if (currentLocation == null) {
+								if (debugMessages) {
+									plugin.logger.warning("NPC ${npc.name} has no location, skipping.")
+								}
+								return@filter false
+							}
 
-									if (plugin.npcManager.isNPCDisabled(npc)) {
-										if (debugMessages) {
-											plugin.logger.info("NPC $npcName is disabled, skipping random pathing.")
-										}
-										return@filter false
-									}
+							if (plugin.npcManager.isNPCDisabled(npc)) {
+								if (debugMessages) {
+									plugin.logger.info("NPC ${npc.name} is disabled, skipping random pathing.")
+								}
+								return@filter false
+							}
 
-									// check if random pathing is enabled for this NPC
-									val npcData = plugin.npcDataManager.getNPCData(npcName)
+							// check if random pathing is enabled for this NPC
+							val npcData = plugin.npcDataManager.getNPCData(npc.name)
 
-									if (npcData?.randomPathing == false) {
-										if (debugMessages) {
-											plugin.logger.info("NPC $npcName has random pathing disabled, skipping.")
-										}
-										return@filter false
-									}
+							if (npcData?.randomPathing == false) {
+								if (debugMessages) {
+									plugin.logger.info("NPC ${npc.name} has random pathing disabled, skipping.")
+								}
+								return@filter false
+							}
 
-									val nearbyPlayers =
-										plugin.getNearbyPlayers(
-											currentLocation,
-											plugin.config.rangeBeforeTeleport,
-											ignoreY = true,
-										)
-
-									if (nearbyPlayers.isEmpty()) {
-										if (debugMessages) {
-											// plugin.logger.info("NPC $npcName has no nearby players, skipping random pathing.")
-										}
-										return@filter false
-									}
-
-									// Check schedule status
-									val hasSchedule = schedules.containsKey(npcName.lowercase())
-									val hasLocationForCurrentTime =
-										hasSchedule &&
-											schedules[npcName.lowercase()]?.getEntryForTime(hour)?.locationName?.isNotEmpty() == true
-									!hasSchedule || !hasLocationForCurrentTime
-								}.mapNotNull { plugin.npcDataManager.getNPC(it) }
-								.toList()
+							// Check schedule status
+							val hasSchedule = schedules.containsKey(npc.name.lowercase())
+							val hasLocationForCurrentTime =
+								hasSchedule &&
+									schedules[npc.name.lowercase()]?.getEntryForTime(hour)?.locationName?.isNotEmpty() == true
+							!hasSchedule || !hasLocationForCurrentTime
+						}
 
 						if (debugMessages) {
 							plugin.logger.info("Found ${candidateNPCs.size} candidate NPCs for random pathing at hour $hour.")
@@ -235,7 +238,6 @@ class NPCScheduleManager private constructor(private val plugin: Story) {
 									.current()
 
 							if (plugin.config.randomPathingEnabled) {
-								// Find candidate NPCs as before
 								// Add eligible NPCs to the queue
 								for (npc in candidateNPCs) {
 									if (random.nextDouble() < randomChance) {
@@ -244,7 +246,7 @@ class NPCScheduleManager private constructor(private val plugin: Story) {
 								}
 
 								// Process a few NPCs from the queue
-								val maxProcessPerTick = 3
+								val maxProcessPerTick = 10
 								for (i in 0 until maxProcessPerTick) {
 									if (npcMovementQueue.isEmpty()) break
 									val nextNPC = npcMovementQueue.poll()
@@ -255,6 +257,23 @@ class NPCScheduleManager private constructor(private val plugin: Story) {
 					}
 				}
 			}.runTaskTimer(plugin, 20L, plugin.config.scheduleTaskPeriod * 20L) // Check every minute
+	}
+
+	/**
+	 * Gets all NPCs that are near active players to optimize processing
+	 * @return List of NPCs that are within range of at least one online player
+	 */
+	private fun getNearbyNPCsToActivePlayers(): List<NPC> {
+		val nearbyNPCs = mutableSetOf<NPC>()
+		val checkRadius = plugin.config.rangeBeforeTeleport * 2.0 // Use a larger radius for proximity checks
+
+		for (player in plugin.server.onlinePlayers) {
+			// Get NPCs near this player
+			val playerNearbyNPCs = plugin.getNearbyNPCs(player, checkRadius)
+			nearbyNPCs.addAll(playerNearbyNPCs)
+		}
+
+		return nearbyNPCs.toList()
 	}
 
 	private fun hasNearbyPlayers(npc: NPC): Boolean {
@@ -465,6 +484,14 @@ class NPCScheduleManager private constructor(private val plugin: Story) {
 			return
 		}
 
+		// Helper function to select random dialogue
+		fun selectRandomDialogue(): String? = if (entry.dialogue.isNullOrEmpty()) {
+			null
+		} else {
+			// Pick a random dialogue from the list
+			entry.dialogue.random()
+		}
+
 		// Handle location movement
 		val locationName = entry.locationName
 		if (!locationName.isNullOrEmpty()) {
@@ -495,22 +522,24 @@ class NPCScheduleManager private constructor(private val plugin: Story) {
 					// Use your existing NPC movement system or teleport WITH callback for action
 					val moveCallback =
 						Runnable {
-							// Teleport to exact location just to ensure NPC is at the right spot
-							// npc.teleport(location.bukkitLocation!!, PlayerTeleportEvent.TeleportCause.PLUGIN)
-
 							// Execute action after reaching destination
 							if (entry.action != null) {
 								executeAction(npc, entry.action)
 							}
 
 							// Handle dialogue after reaching destination
-							if (entry.dialogue != null && entry.dialogue != "") {
+							if (!entry.dialogue.isNullOrEmpty()) {
+								// Select a random dialogue from the list
+								val randomDialogue = selectRandomDialogue()
+
 								// add some random delay from 1 to 6 seconds
 								val randomDelay = (1..6).random() * 20L // Convert to ticks
 								Bukkit.getScheduler().runTaskLater(
 									plugin,
 									Runnable {
-										plugin.npcMessageService.broadcastNPCMessage(entry.dialogue, npc, shouldBroadcast = false)
+										if (randomDialogue != null) {
+											plugin.npcMessageService.broadcastNPCMessage(randomDialogue, npc, shouldBroadcast = false)
+										}
 									},
 									randomDelay,
 								)
@@ -546,24 +575,26 @@ class NPCScheduleManager private constructor(private val plugin: Story) {
 						plugin.logger.info("Moving ${npc.name} to scheduled location: ${location.name}")
 					} else {
 						moveNPCToLocation(npc, baseLocation, moveCallback)
-						// plugin.logger.info("No safe ground found near scheduled random position, using base location for ${npc.name}")
 					}
 				} else {
-					// plugin.logger.info("${npc.name} is already at ${location.name}, skipping movement.")
-
 					// Execute action since NPC is already at destination
 					if (entry.action != null) {
 						executeAction(npc, entry.action)
 					}
 
 					// Handle dialogue since NPC is already at destination
-					if (entry.dialogue != null && entry.dialogue != "") {
-						// add some random delay from 1 to 4 seconds
+					if (!entry.dialogue.isNullOrEmpty()) {
+						// Select a random dialogue
+						val randomDialogue = selectRandomDialogue()
+
+						// add some random delay from 1 to 6 seconds
 						val randomDelay = (1..6).random() * 20L // Convert to ticks
 						Bukkit.getScheduler().runTaskLater(
 							plugin,
 							Runnable {
-								plugin.npcMessageService.broadcastNPCMessage(entry.dialogue, npc, shouldBroadcast = false)
+								if (randomDialogue != null) {
+									plugin.npcMessageService.broadcastNPCMessage(randomDialogue, npc, shouldBroadcast = false)
+								}
 							},
 							randomDelay,
 						)
@@ -576,13 +607,16 @@ class NPCScheduleManager private constructor(private val plugin: Story) {
 				executeAction(npc, entry.action)
 			}
 
+			// Select a random dialogue from the entry
+			val randomDialogue = selectRandomDialogue()
+
 			// Handle dialogue
-			if (entry.dialogue != null && entry.dialogue != "") {
+			if (randomDialogue != null && !plugin.conversationManager.isInConversation(npc)) {
 				val randomDelay = (1..6).random() * 20L
 				Bukkit.getScheduler().runTaskLater(
 					plugin,
 					Runnable {
-						plugin.npcMessageService.broadcastNPCMessage(entry.dialogue, npc, shouldBroadcast = false)
+						plugin.npcMessageService.broadcastNPCMessage(randomDialogue, npc, shouldBroadcast = false)
 					},
 					randomDelay,
 				)
@@ -610,14 +644,14 @@ class NPCScheduleManager private constructor(private val plugin: Story) {
 			plugin.logger.info("Nearby players: ${nearbyPlayers.joinToString(", ") { it.name }}")
 		}
 
-		/* If target location has players, do not teleport.
+		// If target location has players, do not teleport.
 		if (shouldTeleport) {
 			val nearbyPlayersInTargetLocation = plugin.getNearbyPlayers(location, range, ignoreY = true)
 			if (nearbyPlayersInTargetLocation.isNotEmpty()) {
 				shouldTeleport = false
 			}
 		}
-		 */
+
 		// Set NPC pose to standing
 		npc.getOrAddTrait(EntityPoseTrait::class.java).pose = EntityPoseTrait.EntityPose.STANDING
 		npc.getOrAddTrait(SitTrait::class.java).setSitting(null)
@@ -631,10 +665,10 @@ class NPCScheduleManager private constructor(private val plugin: Story) {
 			// Pass the callback to the walkToLocation method
 			val teleportOnFail =
 				Runnable {
-					npc.teleport(location, PlayerTeleportEvent.TeleportCause.PLUGIN)
+					// npc.teleport(location, PlayerTeleportEvent.TeleportCause.PLUGIN)
 					callback?.run()
 				}
-			plugin.npcManager.walkToLocation(npc, location, .5, 1f, 60, callback, teleportOnFail)
+			plugin.npcManager.walkToLocation(npc, location, 1.0, 1f, 120, callback, teleportOnFail)
 		}
 	}
 
@@ -683,6 +717,122 @@ class NPCScheduleManager private constructor(private val plugin: Story) {
 		}
 	}
 
+	/**
+	 * Moves all NPCs within proximity to a specific target location
+	 * @param targetLocation The location where NPCs should move to
+	 * @param proximityRadius The radius to search for NPCs around the target location
+	 * @param action Optional action to execute when NPCs reach the destination (idle, sit, work, sleep)
+	 * @param excludeNPCs Optional list of NPC names to exclude from the movement
+	 * @param onlyIncludeNPCs Optional list of NPC names to only include (if specified, only these NPCs will move)
+	 */
+	fun moveNearbyNPCsToLocation(
+		targetLocation: Location,
+		proximityRadius: Double = 50.0,
+		action: String = "idle",
+		excludeNPCs: List<String> = emptyList(),
+		onlyIncludeNPCs: List<String> = emptyList(),
+	) {
+		// Get all NPCs within proximity of the target location
+		val allNPCs = mutableListOf<NPC>()
+
+		// Get NPCs from all online players within range
+		for (player in plugin.server.onlinePlayers) {
+			if (player.location.world == targetLocation.world &&
+				player.location.distance(targetLocation) <= proximityRadius * 2
+			) {
+				allNPCs.addAll(plugin.getNearbyNPCs(player, proximityRadius + 20.0))
+			}
+		}
+
+		// Filter NPCs to only include those actually within the target radius
+		val nearbyNPCs = allNPCs.distinct().filter { npc ->
+			val npcLocation = npc.entity?.location ?: npc.getOrAddTrait(CurrentLocation::class.java).location
+			npcLocation != null &&
+				npcLocation.world == targetLocation.world &&
+				npcLocation.distance(targetLocation) <= proximityRadius
+		}.filter { npc ->
+			// Apply inclusion/exclusion filters
+			val npcName = npc.name.lowercase()
+			val shouldExclude = excludeNPCs.any { it.lowercase() == npcName }
+			val shouldInclude = onlyIncludeNPCs.isEmpty() || onlyIncludeNPCs.any { it.lowercase() == npcName }
+
+			!shouldExclude && shouldInclude && !plugin.npcManager.isNPCDisabled(npc)
+		}
+
+		if (nearbyNPCs.isEmpty()) {
+			plugin.logger.info("No NPCs found within $proximityRadius blocks of target location")
+			return
+		}
+
+		plugin.logger.info(
+			"Moving ${nearbyNPCs.size} NPCs to target location: ${targetLocation.x}, ${targetLocation.y}, ${targetLocation.z}",
+		)
+
+		// Move each NPC to the target location with slight random offsets to avoid clustering
+		nearbyNPCs.forEachIndexed { index, npc ->
+			// Add small random offsets to prevent NPCs from clustering at exact same spot
+			val random = java.util.concurrent.ThreadLocalRandom.current()
+			val offsetRadius = 3.0 // 3 block radius for spreading NPCs
+			val randomOffsetX = random.nextDouble(-offsetRadius, offsetRadius)
+			val randomOffsetZ = random.nextDouble(-offsetRadius, offsetRadius)
+
+			val individualTargetLocation = Location(
+				targetLocation.world,
+				targetLocation.x + randomOffsetX,
+				targetLocation.y,
+				targetLocation.z + randomOffsetZ,
+				random.nextFloat() * 360f, // Random facing direction
+				targetLocation.pitch,
+			)
+
+			// Find safe ground for this NPC
+			val safeLocation = findNearbyGround(individualTargetLocation, maxBlocksCheck = 5)
+			val finalLocation = safeLocation ?: targetLocation
+
+			// Create callback to execute action after reaching destination
+			val moveCallback = Runnable {
+				executeAction(npc, action)
+				if (plugin.config.debugMessages) {
+					plugin.logger.info("${npc.name} reached target location and executed action: $action")
+				}
+			}
+
+			// Add slight delay between each NPC movement to prevent overwhelming the server
+			val delay = (index * 5L) // 0.25 second delay between each NPC
+			Bukkit.getScheduler().runTaskLater(
+				plugin,
+				Runnable {
+					moveNPCToLocation(npc, finalLocation, moveCallback)
+				},
+				delay,
+			)
+		}
+	}
+
+	/**
+	 * Moves all NPCs within proximity to a specific StoryLocation
+	 * @param targetStoryLocation The StoryLocation where NPCs should move to
+	 * @param proximityRadius The radius to search for NPCs around the target location
+	 * @param action Optional action to execute when NPCs reach the destination
+	 * @param excludeNPCs Optional list of NPC names to exclude from the movement
+	 * @param onlyIncludeNPCs Optional list of NPC names to only include
+	 */
+	fun moveNearbyNPCsToStoryLocation(
+		targetStoryLocation: StoryLocation,
+		proximityRadius: Double = 50.0,
+		action: String = "idle",
+		excludeNPCs: List<String> = emptyList(),
+		onlyIncludeNPCs: List<String> = emptyList(),
+	) {
+		val bukkitLocation = targetStoryLocation.bukkitLocation
+		if (bukkitLocation == null) {
+			plugin.logger.warning("Cannot move NPCs to ${targetStoryLocation.name} - no Bukkit location found")
+			return
+		}
+
+		moveNearbyNPCsToLocation(bukkitLocation, proximityRadius, action, excludeNPCs, onlyIncludeNPCs)
+	}
+
 	fun shutdown() {
 		scheduleTask?.cancel()
 	}
@@ -727,7 +877,7 @@ class NPCScheduleManager private constructor(private val plugin: Story) {
 		val time: Int, // Hour (0-23)
 		var locationName: String?,
 		val action: String?,
-		val dialogue: String?,
+		val dialogue: List<String>? = null,
 		val random: Boolean = false,
 	)
 

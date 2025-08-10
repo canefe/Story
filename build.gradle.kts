@@ -24,9 +24,11 @@ repositories {
 	maven("https://repo.papermc.io/repository/maven-public/") { name = "papermc-repo" }
 	maven("https://oss.sonatype.org/content/groups/public/") { name = "sonatype" }
 	maven("https://maven.citizensnpcs.co/repo") { name = "citizensRepo" }
+	maven("https://nexus.phoenixdevt.fr/repository/maven-public/") { name = "phoenix" }
 	maven("https://repo.byteflux.net/nexus/repository/public/")
 	maven("https://libraries.minecraft.net")
 	maven("https://jitpack.io/")
+	maven("https://repo.alessiodp.com/releases/")
 	maven("https://repo.codemc.io/repository/maven-public/")
 	maven("https://repo.md-5.net/content/groups/public/")
 	maven("https://repo.extendedclip.com/releases/")
@@ -50,7 +52,9 @@ dependencies {
 	// Minecraft Stuff
 
 	// Maven plugin dependencies
-	compileOnly("net.citizensnpcs:citizens-main:2.0.38-SNAPSHOT")
+	implementation("net.byteflux:libby-bukkit:1.1.5")
+
+	compileOnly("net.citizensnpcs:citizens-main:2.0.39-SNAPSHOT")
 	compileOnly("org.mcmonkey:sentinel:2.9.1-SNAPSHOT")
 	compileOnly("net.tnemc:EconomyCore:0.1.3.5-Release-1")
 	implementation("net.kyori:adventure-api:4.21.0")
@@ -64,6 +68,8 @@ dependencies {
 	compileOnly("com.github.LeonMangler:SuperVanish:6.2.18-3")
 	compileOnly("com.github.retrooper:packetevents-spigot:2.8.0")
 	implementation("com.github.stefvanschie.inventoryframework:IF:0.10.19")
+	compileOnly("io.lumine:MythicLib-dist:1.6.2-SNAPSHOT")
+	compileOnly("net.Indyuce:MMOCore-API:1.12.1-SNAPSHOT")
 
 	// Local plugin dependencies
 	compileOnly(
@@ -92,8 +98,13 @@ dependencies {
 	// Add Gson if used by the plugin
 	implementation("com.google.code.gson:gson:2.10.1") // Or the latest version
 
+	// Audio conversion libraries
+	implementation("com.googlecode.soundlibs:jlayer:1.0.1.4")
+	implementation("com.googlecode.soundlibs:mp3spi:1.9.5.4")
+	implementation("com.googlecode.soundlibs:tritonus-share:0.3.7.4")
+
 	// Add Mockito-Kotlin for tests
-	testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0") // Or the latest version compatible with your mockito-core
+	testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
 
 	// Update MockBukkit
 	// Replace testImplementation("com.github.seeseemelk:MockBukkit-v1.19:2.29.0") with:

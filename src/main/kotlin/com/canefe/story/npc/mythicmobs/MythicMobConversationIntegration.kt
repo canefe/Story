@@ -31,9 +31,7 @@ import java.util.regex.Pattern
 /**
  * Handles integration between MythicMobs and the conversation system
  */
-class MythicMobConversationIntegration(
-	private val plugin: Story,
-) : Listener {
+class MythicMobConversationIntegration(private val plugin: Story) : Listener {
 	private val mythicMobsHandler = MythicMobsHandler(plugin)
 	private val adapterRegistry = mutableMapOf<UUID, MythicMobNPCAdapter>()
 
@@ -105,10 +103,7 @@ class MythicMobConversationIntegration(
 	/**
 	 * Gets MythicMobs near a player within a given radius
 	 */
-	fun getNearbyMythicMobs(
-		player: Player,
-		radius: Double,
-	): List<Entity> {
+	fun getNearbyMythicMobs(player: Player, radius: Double): List<Entity> {
 		// Get all entities in a cube around the player
 		val nearbyEntities = player.getNearbyEntities(radius, radius, radius)
 
@@ -122,11 +117,7 @@ class MythicMobConversationIntegration(
 	/**
 	 * Handles the conversation logic between a player and a MythicMob.
 	 */
-	private fun handleConversation(
-		player: Player,
-		npc: NPC,
-		isDirectInteraction: Boolean,
-	): Boolean {
+	private fun handleConversation(player: Player, npc: NPC, isDirectInteraction: Boolean): Boolean {
 		// Check if player has disabled interactions
 		if (plugin.playerManager.isPlayerDisabled(player)) {
 			plugin.playerManager.playerCurrentNPC[player.uniqueId] = npc.uniqueId
@@ -228,10 +219,7 @@ class MythicMobConversationIntegration(
 	/**
 	 * Start a conversation with a MythicMob
 	 */
-	fun startConversation(
-		player: Player,
-		entity: Entity,
-	): Boolean {
+	fun startConversation(player: Player, entity: Entity): Boolean {
 		if (!mythicMobsHandler.isMythicMob(entity)) return false
 
 		val adapter = getOrCreateNPCAdapter(entity) ?: return false
@@ -285,7 +273,7 @@ class MythicMobConversationIntegration(
 		private val displayName: String,
 		private val internalName: String,
 	) : NPC {
-		private val uniqueId = UUID.randomUUID()
+		private val uniqueId = entity.uniqueId
 		private val id = entity.entityId
 		private val traits = mutableMapOf<Class<out Trait>, Trait>()
 
@@ -317,10 +305,7 @@ class MythicMobConversationIntegration(
 						mythicMobsHandler.lookAtTarget(entity, target)
 					}
 
-					fun rotateToHave(
-						yaw: Float,
-						pitch: Float,
-					) {
+					fun rotateToHave(yaw: Float, pitch: Float) {
 						if (entity is org.bukkit.entity.LivingEntity) {
 							val loc = entity.location.clone()
 							loc.yaw = yaw
@@ -364,15 +349,14 @@ class MythicMobConversationIntegration(
 		}
 
 		@Suppress("UNCHECKED_CAST")
-		override fun <T : Trait> getOrAddTrait(trait: Class<T>): T =
-			getTrait(trait) ?: when {
-				trait.name == "net.citizensnpcs.api.trait.trait.RotationTrait" -> {
-					val rotTrait = RotationTrait() as T
-					traits[trait as Class<out Trait>] = rotTrait
-					rotTrait
-				}
-				else -> throw UnsupportedOperationException("Cannot add trait $trait to MythicMob")
+		override fun <T : Trait> getOrAddTrait(trait: Class<T>): T = getTrait(trait) ?: when {
+			trait.name == "net.citizensnpcs.api.trait.trait.RotationTrait" -> {
+				val rotTrait = RotationTrait() as T
+				traits[trait as Class<out Trait>] = rotTrait
+				rotTrait
 			}
+			else -> throw UnsupportedOperationException("Cannot add trait $trait to MythicMob")
+		}
 
 		override fun hasTrait(trait: Class<out Trait>): Boolean =
 			trait.name == "net.citizensnpcs.api.trait.trait.RotationTrait" || traits.containsKey(trait)
@@ -423,18 +407,11 @@ class MythicMobConversationIntegration(
 		// Other Citizens NPC interface methods
 		override fun spawn(location: Location): Boolean = true // Already spawned
 
-		override fun spawn(
-			p0: Location?,
-			p1: SpawnReason?,
-		): Boolean {
+		override fun spawn(p0: Location?, p1: SpawnReason?): Boolean {
 			TODO("Not yet implemented")
 		}
 
-		override fun spawn(
-			p0: Location?,
-			p1: SpawnReason?,
-			p2: Consumer<Entity?>?,
-		): Boolean {
+		override fun spawn(p0: Location?, p1: SpawnReason?, p2: Consumer<Entity?>?): Boolean {
 			TODO("Not yet implemented")
 		}
 
@@ -452,10 +429,7 @@ class MythicMobConversationIntegration(
 			mythicMobsHandler.lookAtTarget(entity, location.world?.getEntities()?.firstOrNull() ?: return)
 		}
 
-		override fun getBlockBreaker(
-			p0: Block?,
-			p1: BlockBreaker.BlockBreakerConfiguration?,
-		): BlockBreaker {
+		override fun getBlockBreaker(p0: Block?, p1: BlockBreaker.BlockBreakerConfiguration?): BlockBreaker {
 			TODO("Not yet implemented")
 		}
 
@@ -483,10 +457,7 @@ class MythicMobConversationIntegration(
 
 		override fun setName(name: String) {}
 
-		override fun teleport(
-			location: Location,
-			cause: PlayerTeleportEvent.TeleportCause,
-		) {}
+		override fun teleport(location: Location, cause: PlayerTeleportEvent.TeleportCause) {}
 
 		override fun useMinecraftAI() = false
 

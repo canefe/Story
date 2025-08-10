@@ -189,11 +189,11 @@ class NPCMessageService(private val plugin: Story) {
 				val npcLocation = entity?.location ?: return@Runnable
 				val disabledHearing = plugin.playerManager.disabledHearing
 
-				var playersCount = 0
+				val players = HashSet<Player>()
 				// Determine which players can see the message
 				for (p in Bukkit.getOnlinePlayers()) {
 					// Check if the player is in the same world and within the radius
-					var inRange =
+					val inRange =
 						p.world == npcLocation.world &&
 							p.location.distance(npcLocation) <= plugin.config.radiantRadius
 
@@ -216,30 +216,55 @@ class NPCMessageService(private val plugin: Story) {
 
 					// Send messages to players who should see them
 					if (shouldSee) {
-						playersCount++
+						players.add(p)
 						parsedMessages.forEach { component ->
 							p.sendMessage(component)
 						}
 					}
 				}
 
-				if (playersCount > 0 && !streaming) {
-					// Wait for gender determination and then play sound
-					genderFuture.thenAccept { gender ->
-						// Use cached lastPlayedSound to avoid repetition
-						val npcKey = npc.name
-						val lastSound = lastPlayedSound[npcKey]
+				var conversation = plugin.conversationManager.getConversation(npc)
 
-						plugin.audioManager
-							.playRandomVoice(
-								location = npc.entity.location,
-								gender = gender,
-								lastPlayed = lastSound,
-							).thenAccept { soundId ->
-								// Update the last played sound for this NPC
-								lastPlayedSound[npcKey] = soundId
+				// If in a conversation, make other npcs look at the speaking NPC
+				conversation?.let { conversation ->
+					if (conversation.hasNPC(npc)) {
+						// Make all other NPCs in the conversation look at this one
+						for (otherNpc in conversation.npcs) {
+							if (otherNpc != npc) {
+								otherNpc.entity?.let { otherEntity ->
+									// Only turn head if the other NPC entity is valid
+									if (otherEntity.isValid && (npc.entity != null && npc.entity.isValid)) {
+										// Turn head towards the speaking NPC
+										plugin.npcBehaviorManager.turnHead(otherNpc, npc.entity)
+									}
+								}
 							}
+						}
 					}
+				}
+				if (!streaming) {
+					plugin.voiceManager.generateSpeechForNPC(npc, message, players)
+						.thenAccept { success ->
+							if (!success) {
+								plugin.logger.warning("Failed to generate speech for NPC ${npc.name}")
+								// Wait for gender determination and then play sound
+								genderFuture.thenAccept { gender ->
+									// Use cached lastPlayedSound to avoid repetition
+									val npcKey = npc.name
+									val lastSound = lastPlayedSound[npcKey]
+
+									plugin.audioManager
+										.playRandomVoice(
+											location = npc.entity.location,
+											gender = gender,
+											lastPlayed = lastSound,
+										).thenAccept { soundId ->
+											// Update the last played sound for this NPC
+											lastPlayedSound[npcKey] = soundId
+										}
+								}
+							}
+						}
 				}
 
 				// Send for console
@@ -270,13 +295,17 @@ class NPCMessageService(private val plugin: Story) {
 	 */
 	fun broadcastPlayerMessage(message: String, player: Player, color: String? = null) {
 		val playerName = EssentialsUtils.getNickname(player.name)
+
+		// Get player context for avatar support (using NPC data system for players)
+		val playerContext = plugin.npcContextGenerator.getOrCreateContextForNPC(player.name)
+
 		// Format the message - using player's name as the sender
 		val parsedMessages =
 			formatMessage(
 				message = message,
 				name = playerName,
 				color = color,
-				avatar = null, // Could add player head support later
+				avatar = playerContext?.avatar, // Add avatar support for players
 			)
 
 		Bukkit.getScheduler().runTask(
@@ -284,6 +313,9 @@ class NPCMessageService(private val plugin: Story) {
 			Runnable {
 				val location = player.location
 				val disabledHearing = plugin.playerManager.disabledHearing
+
+				// Collect players who should see the message
+				val players = HashSet<Player>()
 
 				// Determine which players can see the message
 				for (p in Bukkit.getOnlinePlayers()) {
@@ -298,6 +330,8 @@ class NPCMessageService(private val plugin: Story) {
 
 					// Send messages to players who should see them
 					if (shouldSee) {
+						players.add(p)
+
 						// If this is the speaking player, use a version with (YOU) added
 						val messagesToSend =
 							if (p == player) {
@@ -305,7 +339,7 @@ class NPCMessageService(private val plugin: Story) {
 									message = message,
 									name = playerName,
 									color = color,
-									avatar = null,
+									avatar = playerContext?.avatar,
 									isClientPlayer = true,
 								)
 							} else {
@@ -317,6 +351,14 @@ class NPCMessageService(private val plugin: Story) {
 						}
 					}
 				}
+
+				// Generate voice for the player message
+				plugin.voiceManager.generateSpeechForPlayer(player, message, players)
+					.thenAccept { success ->
+						if (!success) {
+							plugin.logger.info("Voice generation skipped or failed for player ${player.name}")
+						}
+					}
 
 				// Send for console
 				parsedMessages.forEach { component ->

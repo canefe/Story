@@ -1,6 +1,7 @@
 package com.canefe.story.npc.relationship
 
 import com.canefe.story.Story
+import com.canefe.story.npc.memory.Memory
 import java.util.UUID
 
 /**
@@ -17,11 +18,11 @@ data class Relationship(
 	/**
 	 * Updates relationship score directly
 	 */
-	fun updateScore(change: Double) {
+	fun updateScore(change: Double, memory: Memory?) {
 		score = (score + change).coerceIn(-100.0, 100.0)
 
 		// Update relationship type based on score if needed
-		updateRelationshipType()
+		updateRelationshipType(memory)
 	}
 
 	/**
@@ -41,8 +42,8 @@ data class Relationship(
 	/**
 	 * Updates the relationship type based on the current score and traits
 	 */
-	fun updateRelationshipType() {
-		Story.instance.relationshipManager.generateRelationshipLabel(this)
+	fun updateRelationshipType(memory: Memory?) {
+		Story.instance.relationshipManager.generateRelationshipLabel(this, memory)
 			.thenAccept { generatedType ->
 				this.type = generatedType
 			}

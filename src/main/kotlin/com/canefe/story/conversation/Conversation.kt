@@ -5,11 +5,7 @@ import net.citizensnpcs.api.npc.NPC
 import org.bukkit.entity.Player
 import java.util.*
 
-class Conversation(
-	var id: Int = -1,
-	private val _players: MutableList<UUID>,
-	initialNPCs: List<NPC>,
-) {
+class Conversation(var id: Int = -1, private val _players: MutableList<UUID>, initialNPCs: List<NPC>) {
 	private val _npcNames: MutableList<String> = ArrayList()
 	private val _npcs: MutableSet<NPC> = HashSet(initialNPCs)
 	private val _history: MutableList<ConversationMessage> = ArrayList()
@@ -53,6 +49,14 @@ class Conversation(
 			return true
 		}
 		return false
+	}
+
+	fun removeHistoryMessageAt(index: Int): Boolean {
+		if (index < 0 || index >= _history.size) {
+			return false
+		}
+		_history.removeAt(index)
+		return true
 	}
 
 	fun removeNPC(npc: NPC): Boolean {
@@ -101,19 +105,13 @@ class Conversation(
 		return false
 	}
 
-	fun addPlayerMessage(
-		player: Player,
-		message: String,
-	) {
+	fun addPlayerMessage(player: Player, message: String) {
 		// Get nickname
 		val playerName = EssentialsUtils.getNickname(player.name)
 		addUserMessage("$playerName: $message")
 	}
 
-	fun addNPCMessage(
-		npc: NPC,
-		message: String,
-	) {
+	fun addNPCMessage(npc: NPC, message: String) {
 		// Get nickname
 		val npcName = npc.name
 		addAssistantMessage("$npcName: $message")

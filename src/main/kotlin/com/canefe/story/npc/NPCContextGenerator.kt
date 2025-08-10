@@ -14,14 +14,7 @@ class NPCContextGenerator(private val plugin: Story) {
 	/**
 	 * Generates a default context for a new NPC.
 	 */
-	private fun generateDefaultContext(
-		npcName: String,
-		role: String,
-		hours: Int,
-		minutes: Int,
-		season: String,
-		date: String,
-	): String {
+	private fun generateDefaultContext(npcName: String): String {
 		val random = Random(System.currentTimeMillis())
 
 		// Randomly select personality traits
@@ -38,18 +31,11 @@ class NPCContextGenerator(private val plugin: Story) {
 				"They speak in a $tone tone."
 
 		// Construct the context
-		return "$npcName$personality The time is $hours:${String.format("%02d", minutes)} " +
-			"and the season is $season. "
+		return "$npcName$personality"
 	}
 
 	fun getOrCreateContextForNPC(npcName: String): NPCContext? {
 		try {
-			// Use TimeService instead of directly calling SeasonsAPI
-			val hours = plugin.timeService.getHours()
-			val minutes = plugin.timeService.getMinutes()
-			val season = plugin.timeService.getSeason()
-			val date = plugin.timeService.getFormattedDate()
-
 			// Load existing NPC data including all data and memories
 			val npcData =
 				plugin.npcDataManager.getNPCData(npcName) ?: NPCData(
@@ -61,23 +47,7 @@ class NPCContextGenerator(private val plugin: Story) {
 					context =
 					generateDefaultContext(
 						npcName,
-						"Default role",
-						hours,
-						minutes,
-						season,
-						date,
 					),
-				)
-
-			// Update or generate context
-			npcData.context =
-				updateContext(
-					npcData.context,
-					npcName,
-					hours,
-					minutes,
-					season,
-					date,
 				)
 
 			// Save updated NPC data with existing memories preserved
@@ -91,32 +61,13 @@ class NPCContextGenerator(private val plugin: Story) {
 				location = npcData.storyLocation!!,
 				avatar = npcData.avatar ?: "",
 				memories = npcData.memory,
+				customVoice = npcData.customVoice, // Pass the custom voice ID
 			)
 		} catch (e: Exception) {
 			plugin.logger.warning("Error while updating NPC context: ${e.message}")
 			e.printStackTrace()
 			return null
 		}
-	}
-
-	/**
-	 * Updates an existing NPC context with current time and season information.
-	 */
-	private fun updateContext(
-		context: String,
-		npcName: String,
-		hours: Int,
-		minutes: Int,
-		season: String,
-		date: String,
-	): String {
-		var updatedContext =
-			context
-				.replace(Regex("The time is \\d{1,2}:\\d{2}"), "The time is $hours:${String.format("%02d", minutes)}")
-				.replace(Regex("and the season is \\w+"), "and the season is $season")
-				.replace(Regex("The date is \\d{4}-\\d{2}-\\d{2}"), "The date is $date")
-
-		return updatedContext
 	}
 
 	private val generalContexts: MutableList<String> = mutableListOf()

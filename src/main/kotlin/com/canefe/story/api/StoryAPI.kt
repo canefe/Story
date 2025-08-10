@@ -1,6 +1,7 @@
 package com.canefe.story.api
 
 import com.canefe.story.Story
+import com.canefe.story.character.data.CharacterData
 import com.canefe.story.conversation.ConversationMessage
 import org.bukkit.entity.Player
 
@@ -42,9 +43,9 @@ interface StoryAPI {
 					id = conversation.id,
 					// convert UUID to Player object
 					players =
-						conversation.players.mapNotNull { uuid ->
-							instance.server.getPlayer(uuid)
-						},
+					conversation.players.mapNotNull { uuid ->
+						instance.server.getPlayer(uuid)
+					},
 					npcNames = conversation.npcNames,
 					active = conversation.active,
 				)
@@ -61,14 +62,59 @@ interface StoryAPI {
 				APIConversation(
 					id = conversation.id,
 					players =
-						conversation.players.mapNotNull { uuid ->
-							instance.server.getPlayer(uuid)
-						},
+					conversation.players.mapNotNull { uuid ->
+						instance.server.getPlayer(uuid)
+					},
 					npcNames = conversation.npcNames,
 					active = conversation.active,
 					history = conversation.history,
 				)
 			}
+
+		/**
+		 * Get a Character's skills
+		 *
+		 * @param Player The player whose skills to retrieve
+		 * @return List of skill names or empty list if no skills found
+		 */
+		@JvmStatic
+		fun getCharacterSkills(player: Player): List<String> =
+			instance.skillManager.createProviderForCharacter(player.uniqueId, true).getAllSkills()
+
+		/**
+		 * Get a Character's skill level
+		 *
+		 * @param player The player whose skill level to retrieve
+		 * @param skillName The name of the skill
+		 * @return The skill level or 0 if skill not found
+		 */
+		@JvmStatic
+		fun getCharacterSkillLevel(player: Player, skillName: String): Int {
+			val char = getCharacterData(player)
+			char.let {
+				return it?.getSkillModifier(skillName) ?: 0
+			}
+		}
+
+		/**
+		 * Get a Character Data by Player
+		 *
+		 * @param player The player to check
+		 * @return The CharacterData API wrapper if found, null otherwise
+		 */
+		@JvmStatic
+		fun getCharacterData(player: Player): CharacterData? {
+			val char = CharacterData(
+				id = player.uniqueId,
+				name = player.name,
+				role = "default",
+				storyLocation = null,
+				context = "null",
+			)
+			char.isPlayer = true
+			char.setSkillProvider(instance.skillManager.createProviderForCharacter(player.uniqueId, true))
+			return char
+		}
 
 		/**
 		 * Get NPC data by name
@@ -77,14 +123,13 @@ interface StoryAPI {
 		 * @return The NPC data API wrapper if found, null otherwise
 		 */
 		@JvmStatic
-		fun getNPCByName(npcName: String): APINPCData? =
-			instance.npcDataManager.getNPCData(npcName)?.let { npcData ->
-				APINPCData(
-					name = npcData.name,
-					context = npcData.context,
-					appearance = npcData.appearance,
-				)
-			}
+		fun getNPCByName(npcName: String): APINPCData? = instance.npcDataManager.getNPCData(npcName)?.let { npcData ->
+			APINPCData(
+				name = npcData.name,
+				context = npcData.context,
+				appearance = npcData.appearance,
+			)
+		}
 	}
 }
 
@@ -102,8 +147,4 @@ class APIConversation(
 /**
  * API representation of NPC data that's exposed to other plugins
  */
-class APINPCData(
-	val name: String,
-	val context: String,
-	val appearance: String,
-)
+class APINPCData(val name: String, val context: String, val appearance: String)

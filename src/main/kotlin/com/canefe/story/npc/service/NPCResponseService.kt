@@ -24,6 +24,7 @@ class NPCResponseService(private val plugin: Story) {
 		broadcast: Boolean = true,
 		player: Player? = null,
 		rich: Boolean = false,
+		isConversation: Boolean = true,
 	): CompletableFuture<String> {
 		val prompts: MutableList<ConversationMessage> = ArrayList()
 
@@ -167,11 +168,23 @@ class NPCResponseService(private val plugin: Story) {
 
 		// Add specific instructions at the end for emphasis
 		// Add general context with clear section header
-		prompts.add(ConversationMessage("system", "===INSTRUCTIONS===\n"))
+		if (isConversation) {
+			prompts.add(ConversationMessage("system", "===INSTRUCTIONS===\n"))
+			prompts.add(
+				ConversationMessage(
+					"system",
+					contextService.getGeneralContexts().joinToString(separator = "\n"),
+				),
+			)
+		}
+
+		// Include current time and season and date
 		prompts.add(
 			ConversationMessage(
 				"system",
-				contextService.getGeneralContexts().joinToString(separator = "\n"),
+				"===CURRENT TIME===\n" +
+					"The current time is ${plugin.timeService.getHours()}:${plugin.timeService.getMinutes()} at date ${plugin.timeService.getFormattedDate()} " +
+					"in the ${plugin.timeService.getSeason()} season.",
 			),
 		)
 
@@ -414,15 +427,21 @@ Respond only with the directive. No extra commentary.""",
 
 	fun generateNPCGoodbye(npc: NPC, goodbyeContext: List<String>? = null): CompletableFuture<String?> {
 		val prompt =
-			"You are ${npc.name}. You are in a conversation and it is time to say goodbye. Your goodbye must reflect your personality, your relationship and recent memories, especially with the target. Generate a brief goodbye."
+			"You are ${npc.name}. The conversation is ending—whether naturally, awkwardly, or abruptly. Generate a closing remark that reflects your personality, your relationship with the target, and any relevant recent events or emotions. This may be a farewell, a final jab, silence, or walking away mid-sentence—whatever fits."
 
 		val prompts: MutableList<String> = ArrayList()
 		prompts.addAll(goodbyeContext ?: emptyList())
 		prompts.add(prompt)
 
 		val response =
-			generateNPCResponse(npc, listOf(prompts.joinToString(separator = "\n")), true)
+			generateNPCResponse(npc, listOf(prompts.joinToString(separator = "\n")), false)
 				.join()
+
+		plugin.npcMessageService.broadcastNPCMessage(
+			response,
+			npc,
+			npcContext = contextService.getOrCreateContextForNPC(npc.name),
+		)
 
 		return CompletableFuture.completedFuture(response)
 	}
@@ -578,23 +597,26 @@ Respond only with the directive. No extra commentary.""",
 		val responseContext =
 			listOf(
 				"===SUMMARY TASK===",
-				"Create a concise memory of this event from your perspective as $npcName.",
+				"Create a factual first-person memory from $npcName's perspective about this experience:",
 				"INSTRUCTIONS:",
-				"1. Focus on the content of what was said, not physical actions or gestures.",
-				"2. Capture key information exchanged, promises made, and relationship developments.",
-				"3. Include your emotional response and thoughts about what was discussed.",
-				"4. Maintain your character's voice and perspective throughout.",
-				"5. Include mentions of specific people, places, or plans discussed.",
-				"6. Omit stage directions like *gestures* or (actions) that were merely for roleplay.",
-				"FORMAT:",
-				"Write in first person, past tense, as a personal memory.",
-				"Keep it focused on what was meaningful to you as $npcName.",
-				"Be concise but include all critical information (100-150 words maximum).",
+				"1. Focus on concrete events and actions that happened",
+				"2. Include names of people involved and what they said/did",
+				"3. Note the location where this occurred",
+				"4. Include your immediate emotional reaction and key thoughts",
+				"5. Mention any important decisions or plans that resulted",
+				"6. Stay true to your character's voice and perspective",
+				"CONSTRAINTS:",
+				"- Write in past tense as a personal recollection",
+				"- Be concise but include all important details",
+				"- Avoid lengthy descriptions or internal monologue",
+				"- Maximum 3-4 sentences per major event or topic discussed",
+				"- No asterisk actions or overly poetic language",
+				"- Do not include any prefixes like Memory:",
 				"===EVENT===\n$conversationText",
 			)
 
 		// Use generateNPCResponse which already handles memory integration
-		generateNPCResponse(npc, responseContext, false, player, rich = true)
+		generateNPCResponse(npc, responseContext, false, player, rich = true, isConversation = false)
 			.thenAccept { summaryResponse ->
 				if (summaryResponse.isNullOrEmpty()) {
 					plugin.logger.warning("Failed to get summary response for $npcName")
@@ -732,7 +754,15 @@ Respond only with the directive. No extra commentary.""",
 		syntheticConversation.add(
 			ConversationMessage(
 				"system",
-				"Based on the following input, create a detailed memory from $npcName's perspective.",
+				"\"Create a detailed first-person memory based on the following input. The memory should:\n" +
+					"1. Clearly describe what happened from $npcName's perspective\n" +
+					"2. Include specific details about events, people, and places mentioned\n" +
+					"3. Express $npcName's emotional reaction to these events\n" +
+					"4. Mention plans or intentions resulting from these events\n" +
+					"5. Be written in past tense as a personal recollection\n" +
+					"6. Stay true to $npcName's character voice and personality\n" +
+					"\n" +
+					"Your memory should be comprehensive but focused on the most important aspects of what occurred. Avoid vague statements or roleplaying actions like '*narrows eyes*' - instead focus on concrete events and feelings.\",",
 			),
 		)
 
