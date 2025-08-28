@@ -10,6 +10,7 @@ data class NPCData(var name: String, var role: String, var storyLocation: StoryL
 	var appearance: String = ""
 	var randomPathing: Boolean = true
 	var customVoice: String? = null // Custom voice ID for this NPC
+	var generic: Boolean = false // Generic NPCs have no memories and generate temporary personalities
 
 	// Helper method to add a memory
 	fun addMemory(content: String, power: Double = 1.0): Memory {

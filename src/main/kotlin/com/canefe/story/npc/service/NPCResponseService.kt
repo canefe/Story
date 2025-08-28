@@ -480,6 +480,16 @@ Respond only with the directive. No extra commentary.""",
 
 		// Process each NPC individually using summarizeConversationForSingleNPC
 		for (npcName in npcNames) {
+			// Check if NPC is generic - skip memory creation for generic NPCs
+			val npcData = plugin.npcDataManager.getNPCData(npcName)
+			if (npcData?.generic == true) {
+				// Skip memory creation for generic NPCs
+				if (completedNPCs.incrementAndGet() >= pendingNPCs) {
+					future.complete(null)
+				}
+				continue
+			}
+
 			// Use the existing method to generate individual summaries with proper memory integration
 			summarizeConversationForSingleNPC(history, npcName)
 				.thenAccept {
@@ -545,6 +555,14 @@ Respond only with the directive. No extra commentary.""",
 
 		// Return early if not enough conversation history
 		if (history.isEmpty() || history.size < 3) {
+			future.complete(null)
+			return future
+		}
+
+		// Check if NPC is generic - skip memory creation for generic NPCs
+		val npcData = plugin.npcDataManager.getNPCData(npcName)
+		if (npcData?.generic == true && !isPlayer) {
+			plugin.logger.info("Skipping memory creation for generic NPC: $npcName")
 			future.complete(null)
 			return future
 		}
@@ -624,8 +642,8 @@ Respond only with the directive. No extra commentary.""",
 					return@thenAccept
 				}
 
-				val npcData = plugin.npcDataManager.getNPCData(npcName)
-				if (npcData == null) {
+				val npcDataForMemory = plugin.npcDataManager.getNPCData(npcName)
+				if (npcDataForMemory == null) {
 					plugin.logger.warning("No NPC data found for $npcName")
 					future.complete(null)
 					return@thenAccept
@@ -646,9 +664,9 @@ Respond only with the directive. No extra commentary.""",
 								_significance = significance,
 							)
 
-						npcData.memory.add(memory)
+						npcDataForMemory.memory.add(memory)
 						plugin.relationshipManager.updateRelationshipFromMemory(memory, npcName)
-						plugin.npcDataManager.saveNPCData(npcName, npcData)
+						plugin.npcDataManager.saveNPCData(npcName, npcDataForMemory)
 
 						future.complete(null)
 					}.exceptionally { ex ->
@@ -665,8 +683,8 @@ Respond only with the directive. No extra commentary.""",
 								_significance = 1.0,
 							)
 
-						npcData.memory.add(memory)
-						plugin.npcDataManager.saveNPCData(npcName, npcData)
+						npcDataForMemory.memory.add(memory)
+						plugin.npcDataManager.saveNPCData(npcName, npcDataForMemory)
 
 						future.complete(null)
 						null

@@ -102,6 +102,7 @@ class NPCDataManager private constructor(private val plugin: Story) {
 				knowledgeCategories.addAll(config.getStringList("knowledgeCategories").map { it.toString() })
 			}
 			val randomPathing = config.getBoolean("randomPathing", true)
+			val generic = config.getBoolean("generic", false) // Load generic flag
 
 			val storyLocation =
 				plugin.locationManager.getLocation(location) ?: plugin.locationManager.createLocation(location, null)
@@ -121,6 +122,7 @@ class NPCDataManager private constructor(private val plugin: Story) {
 			npcData.appearance = appearance
 			npcData.randomPathing = randomPathing
 			npcData.customVoice = customVoice // Set custom voice
+			npcData.generic = generic // Set generic flag
 
 			// Check if the NPC data is in old format and needs migration
 			if (npcDataMigrator.isOldFormat(npcData)) {
@@ -279,6 +281,7 @@ class NPCDataManager private constructor(private val plugin: Story) {
 		}
 
 		config.set("randomPathing", npcData.randomPathing)
+		config.set("generic", npcData.generic) // Save generic flag
 
 		try {
 			config.save(npcFile)
