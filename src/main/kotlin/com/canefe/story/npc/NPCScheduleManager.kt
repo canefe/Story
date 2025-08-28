@@ -665,8 +665,15 @@ class NPCScheduleManager private constructor(private val plugin: Story) {
 			// Pass the callback to the walkToLocation method
 			val teleportOnFail =
 				Runnable {
-					// npc.teleport(location, PlayerTeleportEvent.TeleportCause.PLUGIN)
-					callback?.run()
+					val teleportEnabled = plugin.config.teleportOnFail
+					if (teleportEnabled) {
+						if (debugMessages) {
+							plugin.logger.info("Walking failed for ${npc.name}, executing teleportOnFail callback")
+						}
+						npc.teleport(location, PlayerTeleportEvent.TeleportCause.PLUGIN)
+						callback?.run()
+					}
+
 				}
 			plugin.npcManager.walkToLocation(npc, location, 1.0, 1f, 120, callback, teleportOnFail)
 		}

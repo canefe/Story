@@ -58,6 +58,8 @@ class ConfigService(private val plugin: Story) {
 	// If NPC is already in pathing range, don't move for schedules
 	var scheduleDestinationTolerance = 1.0
 
+	var teleportOnFail: Boolean = true
+
 	// If no players are nearby within set range, NPCs will teleport to their location
 	var rangeBeforeTeleport: Double = 100.0
 
@@ -146,6 +148,8 @@ class ConfigService(private val plugin: Story) {
 		scheduleDestinationTolerance = config.getDouble("npc.scheduleDestinationTolerance", 1.0)
 		rangeBeforeTeleport = config.getDouble("npc.rangeBeforeTeleport", 100.0)
 
+		teleportOnFail = config.getBoolean("npc.teleportOnFail", true)
+
 		// NPC Voice settings
 		maxVoiceFiles = config.getInt("npc.maxVoiceFiles", 6)
 		soundNameSpace = config.getString("npc.soundNameSpace", "iamusic:npc") ?: "iamusic:npc"
@@ -214,6 +218,7 @@ class ConfigService(private val plugin: Story) {
 		config.set("npc.scheduleTaskPeriod", scheduleTaskPeriod)
 		config.set("npc.scheduleDestinationTolerance", scheduleDestinationTolerance)
 		config.set("npc.rangeBeforeTeleport", rangeBeforeTeleport)
+		config.set("npc.teleportOnFail", teleportOnFail)
 
 		// NPC Voice settings
 		config.set("npc.maxVoiceFiles", maxVoiceFiles)
