@@ -160,6 +160,11 @@ class LocationManager private constructor(private val plugin: Story) {
 					location.allowedNPCs.addAll(config.getStringList("allowedNPCs"))
 				}
 
+				// Load randomPathingAction if exists
+				if (config.contains("randomPathingAction")) {
+					location.randomPathingAction = config.getString("randomPathingAction")
+				}
+
 				// Load Bukkit location if exists
 				loadBukkitLocation(config, location)
 
@@ -214,6 +219,11 @@ class LocationManager private constructor(private val plugin: Story) {
 			location.allowedNPCs.addAll(config.getStringList("allowedNPCs"))
 		}
 
+		// Load randomPathingAction if exists
+		if (config.contains("randomPathingAction")) {
+			location.randomPathingAction = config.getString("randomPathingAction")
+		}
+
 		// Load Bukkit location
 		loadBukkitLocation(config, location)
 
@@ -237,6 +247,11 @@ class LocationManager private constructor(private val plugin: Story) {
 		// Save allowedNPCs if not empty
 		if (location.allowedNPCs.isNotEmpty()) {
 			config.set("allowedNPCs", location.allowedNPCs)
+		}
+
+		// Save randomPathingAction if it exists
+		if (location.randomPathingAction != null) {
+			config.set("randomPathingAction", location.randomPathingAction)
 		}
 
 		// Save Bukkit location if it exists

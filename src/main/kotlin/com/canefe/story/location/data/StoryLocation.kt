@@ -9,6 +9,7 @@ data class StoryLocation(
 	var bukkitLocation: Location? = null,
 	var parentLocationName: String? = null,
 	val allowedNPCs: MutableList<String> = mutableListOf(),
+	var randomPathingAction: String? = null, // Action to perform when NPCs randomly move here (sit, sleep, work, idle)
 ) {
 	fun hasParent(): Boolean = !parentLocationName.isNullOrEmpty()
 

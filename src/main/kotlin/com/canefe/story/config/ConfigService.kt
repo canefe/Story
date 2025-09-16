@@ -63,6 +63,12 @@ class ConfigService(private val plugin: Story) {
 	// If no players are nearby within set range, NPCs will teleport to their location
 	var rangeBeforeTeleport: Double = 100.0
 
+	// Maximum number of NPCs to process per tick for random pathing
+	var maxProcessPerTick: Int = 3
+
+	// Cooldown period in seconds before an NPC can be selected for random pathing again
+	var randomPathingCooldown: Int = 300
+
 	// NPC Voice settings
 	var maxVoiceFiles: Int = 6
 	var soundNameSpace: String = "iamusic:npc"
@@ -85,6 +91,9 @@ class ConfigService(private val plugin: Story) {
 	var elevenLabsApiKey: String = ""
 	var elevenLabsVoices: Map<String, String> = mapOf()
 	var scheduleVoiceGenerationEnabled: Boolean = true
+
+	// Cooldown period in seconds before an NPC can say schedule dialogue again
+	var scheduleDialogueCooldown: Int = 60 // 1 minutes default
 
 	init {
 		plugin.saveDefaultConfig()
@@ -149,6 +158,9 @@ class ConfigService(private val plugin: Story) {
 		scheduleDestinationTolerance = config.getDouble("npc.scheduleDestinationTolerance", 1.0)
 		rangeBeforeTeleport = config.getDouble("npc.rangeBeforeTeleport", 100.0)
 
+		maxProcessPerTick = config.getInt("npc.maxProcessPerTick", 3)
+		randomPathingCooldown = config.getInt("npc.randomPathingCooldown", 300)
+
 		teleportOnFail = config.getBoolean("npc.teleportOnFail", true)
 
 		// NPC Voice settings
@@ -175,6 +187,8 @@ class ConfigService(private val plugin: Story) {
 			?: emptyMap()
 
 		scheduleVoiceGenerationEnabled = config.getBoolean("misc.scheduleVoiceGenerationEnabled", true)
+		scheduleDialogueCooldown =
+			config.getInt("misc.scheduleDialogueCooldown", 60) // 1 minutes default
 
 		traitList = config.getStringList("context.traits")
 		quirkList = config.getStringList("context.quirks")
@@ -219,6 +233,8 @@ class ConfigService(private val plugin: Story) {
 		config.set("npc.scheduleTaskPeriod", scheduleTaskPeriod)
 		config.set("npc.scheduleDestinationTolerance", scheduleDestinationTolerance)
 		config.set("npc.rangeBeforeTeleport", rangeBeforeTeleport)
+		config.set("npc.maxProcessPerTick", maxProcessPerTick)
+		config.set("npc.randomPathingCooldown", randomPathingCooldown)
 		config.set("npc.teleportOnFail", teleportOnFail)
 
 		// NPC Voice settings
@@ -234,6 +250,7 @@ class ConfigService(private val plugin: Story) {
 		config.set("misc.voiceGenerationEnabled", voiceGenerationEnabled)
 		config.set("misc.playerVoiceGenerationEnabled", playerVoiceGenerationEnabled)
 		config.set("misc.elevenLabsApiKey", elevenLabsApiKey)
+		config.set("misc.scheduleDialogueCooldown", scheduleDialogueCooldown)
 
 		// Save elevenLabsVoices map
 		config.set("misc.elevenLabsVoices", null) // Clear existing
