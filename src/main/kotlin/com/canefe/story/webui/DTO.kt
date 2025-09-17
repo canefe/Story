@@ -81,25 +81,20 @@ data class SettlementActionDTO(
 )
 
 // Conversation extensions
-fun Conversation.toDTO(): ConversationDTO =
-	ConversationDTO(
-		id = id,
-		npcNames = npcNames,
-		playerNames = players.map { it.toString() },
-		messages = history.map { it.toDTO() },
-	)
+fun Conversation.toDTO(): ConversationDTO = ConversationDTO(
+	id = id,
+	npcNames = npcNames,
+	playerNames = players.map { it.toString() },
+	messages = history.map { it.toDTO() },
+)
 
-fun ConversationMessage.toDTO(): ConversationMessageDTO =
-	ConversationMessageDTO(
-		role = role,
-		content = content,
-		timestamp = timestamp,
-	)
+fun ConversationMessage.toDTO(): ConversationMessageDTO = ConversationMessageDTO(
+	role = role,
+	content = content,
+	timestamp = timestamp,
+)
 
-fun Conversation.applyFromDTO(
-	dto: ConversationDTO,
-	plugin: Story,
-) {
+fun Conversation.applyFromDTO(dto: ConversationDTO, plugin: Story) {
 	this.clearHistory()
 
 	for (dtoMessage in dto.messages) {
@@ -108,28 +103,25 @@ fun Conversation.applyFromDTO(
 	}
 }
 
-fun NPCData.toDTO(): NPCContextDTO =
-	NPCContextDTO(
-		name = name,
-		role = role,
-		context = context,
-		locationName = storyLocation?.name ?: "Unknown",
-		avatar = avatar,
-		memories = memory.map { it.toDTO() },
-	)
+fun NPCData.toDTO(): NPCContextDTO = NPCContextDTO(
+	name = name,
+	role = role,
+	context = context,
+	locationName = storyLocation?.name ?: "Unknown",
+	avatar = avatar,
+	memories = memory.map { it.toDTO() },
+)
 
-fun Memory.toDTO(): MemoryDTO =
-	MemoryDTO(
-		content = content,
-		power = power,
-		created = realCreatedAt.toEpochMilli(),
-		gameCreatedAt = gameCreatedAt,
-		lastAccessed = lastAccessed,
-	)
+fun Memory.toDTO(): MemoryDTO = MemoryDTO(
+	content = content,
+	power = power,
+	created = realCreatedAt.toEpochMilli(),
+	gameCreatedAt = gameCreatedAt,
+	lastAccessed = lastAccessed,
+)
 
-fun ConversationMessageDTO.toDomain(): ConversationMessage =
-	ConversationMessage(
-		role = role,
-		content = content,
-		timestamp = timestamp,
-	)
+fun ConversationMessageDTO.toDomain(): ConversationMessage = ConversationMessage(
+	role = role,
+	content = content,
+	timestamp = timestamp,
+)

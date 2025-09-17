@@ -4,11 +4,7 @@ import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.minimessage.MiniMessage
 
 object CommandComponentUtils {
-	fun combineWithSeparator(
-		mm: MiniMessage,
-		components: List<Component>,
-		separator: String,
-	): Component {
+	fun combineWithSeparator(mm: MiniMessage, components: List<Component>, separator: String): Component {
 		val sep = mm.deserialize(separator)
 		return components.reduceIndexed { i, acc, comp ->
 			if (i == 0) acc else acc.append(sep).append(comp)
@@ -30,11 +26,7 @@ object CommandComponentUtils {
 		)
 	}
 
-	fun combineComponentsWithSeparator(
-		mm: MiniMessage,
-		components: List<Component>,
-		separatorText: String,
-	): Component {
+	fun combineComponentsWithSeparator(mm: MiniMessage, components: List<Component>, separatorText: String): Component {
 		val separator = mm.deserialize(separatorText)
 
 		var result = Component.empty()

@@ -111,10 +111,7 @@ class QuestListener(
 	 * @param target The collection target string
 	 * @return True if the item matches the target
 	 */
-	fun itemMatchesTarget(
-		item: ItemStack,
-		target: String,
-	): Boolean {
+	fun itemMatchesTarget(item: ItemStack, target: String): Boolean {
 		val properties = parseCollectionTarget(target)
 
 		// Check material first
@@ -212,11 +209,7 @@ class QuestListener(
 	/**
 	 * Helper method to update quest progress for all appropriate quests
 	 */
-	private fun updateQuestProgress(
-		player: Player,
-		type: ObjectiveType,
-		target: String,
-	) {
+	private fun updateQuestProgress(player: Player, type: ObjectiveType, target: String) {
 		// Create a copy of the map entries to avoid ConcurrentModificationException
 		val questEntries = HashMap(plugin.questManager.getPlayerQuests(player.uniqueId))
 

@@ -159,7 +159,7 @@ class NPCActionIntentRecognizer(private val plugin: Story) {
 			validCollectibles,
 			validKillTargets,
 			validLocations,
-			validTalkTargets
+			validTalkTargets,
 		)
 
 		messages.add(

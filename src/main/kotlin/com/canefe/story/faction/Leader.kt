@@ -107,10 +107,7 @@ data class Leader(
 	}
 
 	// Update relationship with another leader
-	fun updateRelationship(
-		targetId: String,
-		change: Int,
-	) {
+	fun updateRelationship(targetId: String, change: Int) {
 		val current = relationships.getOrDefault(targetId, 0)
 		relationships[targetId] = (current + change).coerceIn(-100, 100)
 	}
@@ -119,18 +116,17 @@ data class Leader(
 	fun getRelationship(targetId: String): Int = relationships.getOrDefault(targetId, 0)
 
 	// Get relationship description
-	fun getRelationshipDescription(targetId: String): String =
-		when (getRelationship(targetId)) {
-			in -100..-75 -> "Hated Enemy"
-			in -74..-50 -> "Rival"
-			in -49..-25 -> "Disliked"
-			in -24..-1 -> "Unfriendly"
-			0 -> "Neutral"
-			in 1..25 -> "Cordial"
-			in 26..50 -> "Friendly"
-			in 51..75 -> "Trusted Ally"
-			else -> "Blood Brother"
-		}
+	fun getRelationshipDescription(targetId: String): String = when (getRelationship(targetId)) {
+		in -100..-75 -> "Hated Enemy"
+		in -74..-50 -> "Rival"
+		in -49..-25 -> "Disliked"
+		in -24..-1 -> "Unfriendly"
+		0 -> "Neutral"
+		in 1..25 -> "Cordial"
+		in 26..50 -> "Friendly"
+		in 51..75 -> "Trusted Ally"
+		else -> "Blood Brother"
+	}
 
 	// Convert to data that can be saved in YAML
 	fun toYamlSection(): Map<String, Any> {
@@ -315,10 +311,9 @@ data class SettlementAction(
 	val description: String,
 	val timestamp: Date,
 ) {
-	fun toYamlSection(): Map<String, Any> =
-		mapOf(
-			"type" to type.name,
-			"description" to description,
-			"timestamp" to timestamp.time,
-		)
+	fun toYamlSection(): Map<String, Any> = mapOf(
+		"type" to type.name,
+		"description" to description,
+		"timestamp" to timestamp.time,
+	)
 }

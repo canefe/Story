@@ -16,12 +16,76 @@ class NPCDataManager private constructor(private val plugin: Story) {
 	private val npcDataCache: MutableMap<String, NPCData> = HashMap()
 	private val npcDataMigrator = NPCDataMigrator(plugin)
 
+	// Index cache for displayHandle -> filename mappings
+	private val displayHandleToFileIndex: MutableMap<String, String> = HashMap()
+	private var indexBuilt = false
+
 	val npcDirectory: File =
 		File(plugin.dataFolder, "npcs").apply {
 			if (!exists()) {
 				mkdirs() // Create the directory if it doesn't exist
 			}
 		}
+
+	/**
+	 * Builds the index of displayHandle -> filename mappings by scanning all files once
+	 */
+	private fun buildDisplayHandleIndex() {
+		if (indexBuilt) return
+
+		displayHandleToFileIndex.clear()
+		val allFiles = npcDirectory.listFiles { _, name -> name.endsWith(".yml") }
+		allFiles?.forEach { file ->
+			try {
+				val tempConfig = YamlConfiguration.loadConfiguration(file)
+				val fileDisplayHandle = tempConfig.getString("displayHandle")
+				if (fileDisplayHandle != null) {
+					displayHandleToFileIndex[fileDisplayHandle] = file.nameWithoutExtension
+				}
+			} catch (e: Exception) {
+				// Skip malformed files
+			}
+		}
+		indexBuilt = true
+		plugin.logger.info("Built display handle index with ${displayHandleToFileIndex.size} mappings")
+	}
+
+	/**
+	 * Updates the index when a file is saved with new displayHandle mapping
+	 */
+	private fun updateDisplayHandleIndex(displayHandle: String?, filename: String) {
+		if (displayHandle != null) {
+			displayHandleToFileIndex[displayHandle] = filename
+		}
+	}
+
+	/**
+	 * Finds the actual filename for a given NPC name (which might be a displayHandle)
+	 */
+	private fun findActualFileName(npcName: String): String? {
+		// Build index if not built yet
+		if (!indexBuilt) {
+			buildDisplayHandleIndex()
+		}
+
+		// Check if this is a display handle in our index
+		displayHandleToFileIndex[npcName]?.let { return it }
+
+		// If not in index, try normalized filename
+		val normalizedFileName = npcName.replace(" ", "_").lowercase()
+		val normalizedFile = File(npcDirectory, "$normalizedFileName.yml")
+		if (normalizedFile.exists()) {
+			return normalizedFileName
+		}
+
+		// Try original filename
+		val originalFile = File(npcDirectory, "$npcName.yml")
+		if (originalFile.exists()) {
+			return npcName
+		}
+
+		return null
+	}
 
 	/**
 	 * Gets a list of all NPC names by scanning the NPC directory for YAML files.
@@ -74,11 +138,13 @@ class NPCDataManager private constructor(private val plugin: Story) {
 		}
 
 		try {
-			val npcFile = File(npcDirectory, "$npcName.yml")
-			if (!npcFile.exists()) {
+			// Use efficient index lookup instead of scanning all files
+			val actualFileName = findActualFileName(npcName)
+			if (actualFileName == null) {
 				return null // Return null if no file exists
 			}
 
+			val npcFile = File(npcDirectory, "$actualFileName.yml")
 			val config = YamlConfiguration.loadConfiguration(npcFile)
 			val name = config.getString("name") ?: npcName
 			val role = config.getString("role") ?: ""
@@ -104,6 +170,13 @@ class NPCDataManager private constructor(private val plugin: Story) {
 			val randomPathing = config.getBoolean("randomPathing", true)
 			val generic = config.getBoolean("generic", false) // Load generic flag
 
+			val nameBank = config.getString("nameBank")
+			val npcId = config.getString("npcId")
+			val anchorKey = config.getString("anchorKey")
+			val canonicalName = config.getString("canonicalName")
+			val displayHandle = config.getString("displayHandle")
+			val callsign = config.getString("callsign")
+
 			val storyLocation =
 				plugin.locationManager.getLocation(location) ?: plugin.locationManager.createLocation(location, null)
 
@@ -123,6 +196,14 @@ class NPCDataManager private constructor(private val plugin: Story) {
 			npcData.randomPathing = randomPathing
 			npcData.customVoice = customVoice // Set custom voice
 			npcData.generic = generic // Set generic flag
+
+			// Set new name aliasing fields
+			npcData.nameBank = nameBank
+			npcData.npcId = npcId
+			npcData.anchorKey = anchorKey
+			npcData.canonicalName = canonicalName
+			npcData.displayHandle = displayHandle
+			npcData.callsign = callsign
 
 			// Check if the NPC data is in old format and needs migration
 			if (npcDataMigrator.isOldFormat(npcData)) {
@@ -173,12 +254,14 @@ class NPCDataManager private constructor(private val plugin: Story) {
 	}
 
 	fun loadNPCMemory(npcName: String): MutableList<Memory> {
-		val npcFile = File(npcDirectory, "$npcName.yml")
-		if (!npcFile.exists()) {
+		// Use efficient index lookup instead of scanning all files
+		val actualFileName = findActualFileName(npcName)
+		if (actualFileName == null) {
 			plugin.logger.info("No NPC file exists for $npcName, returning empty memory list")
 			return mutableListOf()
 		}
 
+		val npcFile = File(npcDirectory, "$actualFileName.yml")
 		val config = YamlConfiguration.loadConfiguration(npcFile)
 		val memoriesSection = config.getConfigurationSection("memories")
 		if (memoriesSection == null) {
@@ -227,12 +310,14 @@ class NPCDataManager private constructor(private val plugin: Story) {
 			)
 		}
 
-		plugin.logger.info("Loaded ${memories.size} memories for NPC $npcName")
 		return memories
 	}
 
 	fun saveNPCData(npcName: String, npcData: NPCData) {
-		val npcFile = File(npcDirectory, "$npcName.yml")
+		// Use efficient index lookup instead of scanning all files
+		val actualFileName = findActualFileName(npcName) ?: npcName.replace(" ", "_").lowercase()
+
+		val npcFile = File(npcDirectory, "$actualFileName.yml")
 		val config = YamlConfiguration()
 
 		// Save basic NPC data
@@ -283,12 +368,23 @@ class NPCDataManager private constructor(private val plugin: Story) {
 		config.set("randomPathing", npcData.randomPathing)
 		config.set("generic", npcData.generic) // Save generic flag
 
+		// Save new name aliasing fields
+		config.set("nameBank", npcData.nameBank)
+		config.set("npcId", npcData.npcId)
+		config.set("anchorKey", npcData.anchorKey)
+		config.set("canonicalName", npcData.canonicalName)
+		config.set("displayHandle", npcData.displayHandle)
+		config.set("callsign", npcData.callsign)
+
 		try {
 			config.save(npcFile)
 		} catch (e: IOException) {
 			plugin.logger.severe("Failed to save NPC file for $npcName: ${e.message}")
 			e.printStackTrace()
 		}
+
+		// Update the display handle index if necessary
+		updateDisplayHandleIndex(npcData.displayHandle, actualFileName)
 	}
 
 	fun saveNPCFile(npcName: String, config: FileConfiguration) {
@@ -301,13 +397,16 @@ class NPCDataManager private constructor(private val plugin: Story) {
 	}
 
 	fun getNPC(npcName: String): NPC? {
-		val npcFile = File(npcDirectory, "$npcName.yml")
-		if (!npcFile.exists()) {
+		val actualFileName = findActualFileName(npcName)
+		if (actualFileName == null) {
 			return null // Return null if no file exists
 		}
 
-		// Try to find npc by name in citizens registry
-		return CitizensAPI.getNPCRegistry().find { it.name.equals(npcName, ignoreCase = true) }
+		// Try to find npc by name in citizens registry using the actual filename
+		return CitizensAPI.getNPCRegistry().find {
+			it.name.equals(actualFileName, ignoreCase = true) ||
+				it.name.equals(npcName, ignoreCase = true)
+		}
 	}
 
 	fun deleteNPCFile(npcName: String) {
@@ -317,10 +416,16 @@ class NPCDataManager private constructor(private val plugin: Story) {
 		}
 	}
 
-	// Reset the NPC data cache
+	// Reset the NPC data cache and display handle index
 	fun loadConfig() {
 		npcDataCache.clear()
-		plugin.logger.info("NPC data cache cleared")
+
+		// Reset and rebuild the display handle index
+		displayHandleToFileIndex.clear()
+		indexBuilt = false
+		buildDisplayHandleIndex() // Proactively rebuild the index
+
+		plugin.logger.info("NPC data cache cleared and display handle index rebuilt")
 	}
 
 	companion object {

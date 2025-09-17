@@ -51,10 +51,7 @@ class NPCDataMigrator(private val plugin: Story) {
 	 * @param npcData The NPC data to migrate
 	 * @return The migrated NPC data with memories
 	 */
-	fun migrateToNewFormat(
-		npcName: String,
-		npcData: NPCData,
-	): CompletableFuture<NPCData> {
+	fun migrateToNewFormat(npcName: String, npcData: NPCData): CompletableFuture<NPCData> {
 		val future = CompletableFuture<NPCData>()
 
 		try {

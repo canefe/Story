@@ -47,7 +47,7 @@ class NPCMessageService(private val plugin: Story) {
 		formatColorSuffix: String? = "</white>",
 	): List<Component> {
 		val mm = MiniMessage.miniMessage()
-		val maxLineWidth = 40 // Adjust based on desired character limit per line
+		val maxLineWidth = plugin.config.maxLineWidth // Use configurable value from config
 		val padding = "             " // Space padding to align text with the image
 		val nameColor = color ?: plugin.npcUtils.randomColor(name)
 		// Split response into lines to handle multi-line input
@@ -78,7 +78,7 @@ class NPCMessageService(private val plugin: Story) {
 			// Handle emotes inside the message (*content*)
 			val formattedMessage =
 				npcId?.run { cleanedMessage }
-					?: cleanedMessage.replace(Regex("\\*(.*?)\\*"), "<gray><italic>($1)</italic></gray>")
+					?: cleanedMessage.replace(Regex("\\*(.*?)\\*\\s*"), "<gray><italic>($1)</italic></gray>\n$padding")
 
 			// Split the message into multiple lines to fit within the width limit
 			val wrappedLines = wrapTextWithFormatting(formattedMessage, maxLineWidth)
@@ -111,11 +111,19 @@ class NPCMessageService(private val plugin: Story) {
 
 			// Add padding spaces before each wrapped line for alignment
 			for (wrappedLine in wrappedLines) {
-				parsedMessages.add(mm.deserialize("$padding$formatColor$wrappedLine$formatColorSuffix"))
+				// Check if the line already starts with padding (from action processing)
+				val lineWithPadding = if (wrappedLine.startsWith(padding)) {
+					// Line already has padding, don't add more
+					wrappedLine
+				} else {
+					// Line needs padding
+					"$padding$wrappedLine"
+				}
+				parsedMessages.add(mm.deserialize("$formatColor$lineWithPadding$formatColorSuffix"))
 			}
 
 			// Add empty lines for spacing
-			repeat(5) {
+			repeat(2) {
 				parsedMessages.add(mm.deserialize(padding))
 			}
 		}
@@ -163,13 +171,13 @@ class NPCMessageService(private val plugin: Story) {
 			}
 
 		// Get the context if not provided
-		val context = npcContext ?: plugin.npcContextGenerator.getOrCreateContextForNPC(npc.name)
+		val context = npcContext ?: plugin.npcContextGenerator.getOrCreateContextForNPC(npc)
 
 		// Format the message
 		val parsedMessages =
 			formatMessage(
 				message = message,
-				name = npc.name,
+				name = npcContext?.name ?: npc.name,
 				color = color,
 				avatar = context?.avatar,
 				npcId = if (streaming) npc.uniqueId else null,
@@ -246,7 +254,6 @@ class NPCMessageService(private val plugin: Story) {
 					plugin.voiceManager.generateSpeechForNPC(npc, message, players)
 						.thenAccept { success ->
 							if (!success) {
-								plugin.logger.warning("Failed to generate speech for NPC ${npc.name}")
 								// Wait for gender determination and then play sound
 								genderFuture.thenAccept { gender ->
 									// Use cached lastPlayedSound to avoid repetition
@@ -483,38 +490,57 @@ class NPCMessageService(private val plugin: Story) {
 	// Helper methods for text wrapping
 	private fun wrapTextWithFormatting(text: String, maxWidth: Int): List<String> {
 		val result = ArrayList<String>()
-		var remainingText = text
-		var safetyLimit = 100 // to avoid infinite loops
+		val padding = "             " // Same padding used in formatMessage
 
-		while (remainingText.isNotEmpty() && safetyLimit-- > 0) {
-			// if the remaining plain text fits, we're done
-			if (getPlainTextLength(remainingText) <= maxWidth) {
-				result.add(remainingText)
-				break
+		// Split by newlines first to handle action-forced line breaks
+		val lineSegments = text.split("\n")
+
+		for (segment in lineSegments) {
+			var remainingText = segment
+			var safetyLimit = 100 // to avoid infinite loops
+
+			while (remainingText.isNotEmpty() && safetyLimit-- > 0) {
+				// Remove padding from the beginning if it exists for length calculation
+				val textForCalculation = if (remainingText.startsWith(padding)) {
+					remainingText.substring(padding.length)
+				} else {
+					remainingText
+				}
+
+				// if the remaining plain text fits, we're done
+				if (getPlainTextLength(textForCalculation) <= maxWidth) {
+					result.add(remainingText)
+					break
+				}
+
+				// Find a break point based solely on plain text length
+				val breakPoint = findBreakPoint(remainingText, maxWidth, padding)
+				val line = remainingText.substring(0, breakPoint).trim()
+				remainingText = remainingText.substring(breakPoint).trim()
+
+				// Get all active (open but not closed) tags at the end of 'line'
+				val activeTags = getActiveTags(line)
+
+				// Append closing tags in reverse order to properly close them
+				val closingTags = StringBuilder()
+				for (i in activeTags.size - 1 downTo 0) {
+					closingTags.append(getClosingTag(activeTags[i]))
+				}
+				val finalizedLine = line + closingTags.toString()
+				result.add(finalizedLine)
+
+				// For the next line, prepend the active tags and padding so that the formatting continues
+				val reopening = StringBuilder()
+				// Add padding for continuation lines only if needed
+				if (!remainingText.startsWith(padding)) {
+					reopening.append(padding)
+				}
+				for (tag in activeTags) {
+					reopening.append(tag)
+				}
+				// Ensure no extra spaces are added when combining
+				remainingText = reopening.toString() + remainingText.trimStart()
 			}
-
-			// Find a break point based solely on plain text length
-			val breakPoint = findBreakPoint(remainingText, maxWidth)
-			val line = remainingText.substring(0, breakPoint).trim()
-			remainingText = remainingText.substring(breakPoint).trim()
-
-			// Get all active (open but not closed) tags at the end of 'line'
-			val activeTags = getActiveTags(line)
-
-			// Append closing tags in reverse order to properly close them
-			val closingTags = StringBuilder()
-			for (i in activeTags.size - 1 downTo 0) {
-				closingTags.append(getClosingTag(activeTags[i]))
-			}
-			val finalizedLine = line + closingTags.toString()
-			result.add(finalizedLine)
-
-			// For the next line, prepend the active tags so that the formatting continues
-			val reopening = StringBuilder()
-			for (tag in activeTags) {
-				reopening.append(tag)
-			}
-			remainingText = reopening.toString() + remainingText
 		}
 
 		return result
@@ -525,13 +551,22 @@ class NPCMessageService(private val plugin: Story) {
 		return text.replace("<[^>]+>".toRegex(), "").length
 	}
 
-	private fun findBreakPoint(text: String, maxWidth: Int): Int {
+	private fun findBreakPoint(text: String, maxWidth: Int, padding: String = ""): Int {
 		var count = 0
 		var lastSpaceIndex = -1
 		var inTag = false
+		var skipPadding = text.startsWith(padding)
+		var paddingSkipped = 0
 
 		for (i in text.indices) {
 			val c = text[i]
+
+			// Skip padding at the beginning for character counting
+			if (skipPadding && paddingSkipped < padding.length) {
+				paddingSkipped++
+				continue
+			}
+
 			if (c == '<') inTag = true
 			if (!inTag) {
 				count++
@@ -539,7 +574,18 @@ class NPCMessageService(private val plugin: Story) {
 			}
 			if (c == '>') inTag = false
 			if (count >= maxWidth) {
-				return if (lastSpaceIndex != -1) lastSpaceIndex else i + 1
+				// If we found a space within the limit, break there
+				if (lastSpaceIndex != -1) {
+					return lastSpaceIndex
+				}
+				// If no space found, look ahead for the next space to avoid breaking words
+				for (j in i until text.length) {
+					if (text[j] == ' ' || text[j] == '<') {
+						return j
+					}
+				}
+				// If no space found at all, return the current position as last resort
+				return i
 			}
 		}
 		return text.length

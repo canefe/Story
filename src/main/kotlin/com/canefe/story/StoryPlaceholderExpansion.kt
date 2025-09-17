@@ -16,10 +16,7 @@ class StoryPlaceholderExpansion(
 
 	override fun canRegister(): Boolean = true
 
-	override fun onPlaceholderRequest(
-		player: Player?,
-		params: String,
-	): String? {
+	override fun onPlaceholderRequest(player: Player?, params: String): String? {
 		if (player == null) {
 			return ""
 		}

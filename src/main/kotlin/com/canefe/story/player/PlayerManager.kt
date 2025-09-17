@@ -40,10 +40,7 @@ class PlayerManager(
 
 	// Player-NPC interaction methods
 
-	fun setCurrentNPC(
-		player: UUID,
-		npc: UUID,
-	) {
+	fun setCurrentNPC(player: UUID, npc: UUID) {
 		playerCurrentNPC[player] = npc
 	}
 
@@ -55,10 +52,7 @@ class PlayerManager(
 
 	// Spying methods
 
-	fun setSpyingConversation(
-		player: UUID,
-		conversationId: Int,
-	) {
+	fun setSpyingConversation(player: UUID, conversationId: Int) {
 		playerSpyingConversation[player] = conversationId
 	}
 
@@ -71,10 +65,7 @@ class PlayerManager(
 
 	// Chat toggle methods
 
-	fun togglePlayerInteractions(
-		executor: Player?,
-		target: Player?,
-	) {
+	fun togglePlayerInteractions(executor: Player?, target: Player?) {
 		val targetName = target?.name ?: return
 
 		if (disabledPlayers.contains(targetName)) {
@@ -93,11 +84,7 @@ class PlayerManager(
 
 	// Quest methods
 
-	fun setPlayerQuest(
-		player: Player,
-		title: String,
-		objective: String,
-	) {
+	fun setPlayerQuest(player: Player, title: String, objective: String) {
 		val playerUUID = player.uniqueId
 		playerQuestTitles[playerUUID] = title
 		playerQuestObjectives[playerUUID] = objective
@@ -112,10 +99,7 @@ class PlayerManager(
 		saveData()
 	}
 
-	fun showPlayerQuest(
-		viewer: Player,
-		target: Player,
-	) {
+	fun showPlayerQuest(viewer: Player, target: Player) {
 		val targetUUID = target.uniqueId
 		val title = playerQuestTitles[targetUUID] ?: ""
 		val objective = playerQuestObjectives[targetUUID] ?: ""
@@ -134,10 +118,7 @@ class PlayerManager(
 
 	// Team methods
 
-	fun createTeam(
-		teamName: String,
-		sender: Player,
-	) {
+	fun createTeam(teamName: String, sender: Player) {
 		if (teams.containsKey(teamName)) {
 			sender.sendError("Team '$teamName' already exists!")
 			return
@@ -148,11 +129,7 @@ class PlayerManager(
 		saveData()
 	}
 
-	fun addPlayerToTeam(
-		teamName: String,
-		target: Player,
-		sender: Player,
-	) {
+	fun addPlayerToTeam(teamName: String, target: Player, sender: Player) {
 		if (!teams.containsKey(teamName)) {
 			sender.sendError("Team '$teamName' does not exist!")
 			return
@@ -171,11 +148,7 @@ class PlayerManager(
 		saveData()
 	}
 
-	fun removePlayerFromTeam(
-		teamName: String,
-		target: Player,
-		sender: Player,
-	) {
+	fun removePlayerFromTeam(teamName: String, target: Player, sender: Player) {
 		if (!teams.containsKey(teamName)) {
 			sender.sendError("Team '$teamName' does not exist!")
 			return
@@ -191,10 +164,7 @@ class PlayerManager(
 		saveData()
 	}
 
-	fun listTeams(
-		player: Player,
-		teamName: String?,
-	) {
+	fun listTeams(player: Player, teamName: String?) {
 		if (teamName != null) {
 			if (!teams.containsKey(teamName)) {
 				player.sendError("Team '$teamName' does not exist!")
@@ -215,10 +185,7 @@ class PlayerManager(
 		}
 	}
 
-	fun deleteTeam(
-		teamName: String,
-		sender: Player,
-	) {
+	fun deleteTeam(teamName: String, sender: Player) {
 		if (!teams.containsKey(teamName)) {
 			sender.sendError("Team '$teamName' does not exist!")
 			return

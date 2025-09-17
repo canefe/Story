@@ -6,6 +6,7 @@ import com.canefe.story.command.faction.FactionCommand
 import com.canefe.story.command.faction.SettlementCommand
 import com.canefe.story.command.story.StoryCommand
 import com.canefe.story.conversation.ConversationMessage
+import com.canefe.story.location.data.StoryLocation
 import com.canefe.story.npc.data.NPCData
 import com.canefe.story.util.EssentialsUtils
 import com.canefe.story.util.Msg.sendError
@@ -24,9 +25,11 @@ import net.citizensnpcs.api.npc.NPC
 import net.citizensnpcs.trait.FollowTrait
 import org.bukkit.Bukkit
 import org.bukkit.entity.Entity
+import org.bukkit.entity.EntityType
 import org.bukkit.entity.Player
 import org.mcmonkey.sentinel.SentinelTrait
 import java.util.UUID
+import java.util.concurrent.CompletableFuture
 import kotlin.compareTo
 
 /**
@@ -312,7 +315,7 @@ class CommandManager(private val plugin: Story) {
 		// npcinit
 		CommandAPICommand("npcinit")
 			.withPermission("storymaker.npc.init")
-			.withArguments(StringArgument("location"))
+			.withArguments(TextArgument("location"))
 			.withArguments(TextArgument("npc"))
 			.withOptionalArguments(GreedyStringArgument("prompt"))
 			.executes(
@@ -390,20 +393,10 @@ class CommandManager(private val plugin: Story) {
 							),
 						)
 
-						messages.add(
-							ConversationMessage(
-								"system",
-								"""
-									Generate detailed RPG character information for an NPC named $npcName in the location $location.
-									Return ONLY a valid JSON object with these fields:
-									1. "context": Background story, personality, motivations, and role in society
-									2. "appearance": Detailed physical description including clothing, notable features
+						// Use PromptService to get the NPC character generation prompt
+						val characterPrompt = plugin.promptService.getNpcCharacterGenerationPrompt(npcName, location)
 
-									Make the character interesting with clear motivations, quirks, and depth.
-									The JSON must be properly formatted with quotes escaped.
-								 """,
-							),
-						)
+						messages.add(ConversationMessage("system", characterPrompt))
 
 						// Add the user prompt
 						messages.add(ConversationMessage("user", prompt))
@@ -488,10 +481,61 @@ class CommandManager(private val plugin: Story) {
 				},
 			).register()
 
+		// locinitnpcs command - Multi-agent NPC population system
+		CommandAPICommand("locinitnpcs")
+			.withPermission("storymaker.npc.init")
+			.withArguments(TextArgument("location"))
+			.withArguments(TextArgument("context"))
+			.withOptionalArguments(IntegerArgument("npc_count"))
+			.withOptionalArguments(BooleanArgument("debug").setOptional(false))
+			.executes(
+				CommandExecutor { sender, args ->
+					val location = args.get("location") as String
+					val context = args.get("context") as String
+					val npcCount = args.getOptional("npc_count").orElse(5) as Int
+					val debug = args.getOptional("debug").orElse(false) as Boolean
+
+					// Validate location exists
+					val storyLocation = plugin.locationManager.getLocation(location)
+					if (storyLocation == null) {
+						sender.sendError("Location '$location' not found. Please create the location first.")
+						return@CommandExecutor
+					}
+
+					// Validate NPC count
+					if (npcCount < 1 || npcCount > 20) {
+						sender.sendError("NPC count must be between 1 and 20.")
+						return@CommandExecutor
+					}
+
+					sender.sendInfo("🏗️ Starting multi-agent NPC population for location: <yellow>$location</yellow>")
+					sender.sendInfo("📝 Context: <italic>$context</italic>")
+					sender.sendInfo("👥 Target NPC count: <yellow>$npcCount</yellow>")
+					if (debug) {
+						sender.sendInfo("🐛 Debug mode: <green>enabled</green>")
+					}
+
+					// Execute the multi-agent population system
+					executeLocationNPCPopulation(sender, location, context, npcCount, debug)
+				},
+			).register()
+
 		fun talkAsNPC(player: Player, npcUniqueId: UUID, message: String) {
 			// Check if NPC exists
 			var npc = CitizensAPI.getNPCRegistry().getByUniqueId(npcUniqueId)
-			val isMythicMob = MythicBukkit.inst().mobManager.mobRegistry.get(npcUniqueId) != null
+
+			// Only check MythicMobs if the plugin is available
+			val isMythicMob = try {
+				if (Bukkit.getPluginManager().getPlugin("MythicMobs") != null) {
+					MythicBukkit.inst().mobManager.mobRegistry.get(npcUniqueId) != null
+				} else {
+					false
+				}
+			} catch (e: NoClassDefFoundError) {
+				// MythicMobs classes not available
+				false
+			}
+
 			if (npc == null && !isMythicMob) {
 				player.sendError("NPC not found.")
 				throw CommandAPI.failWithString("NPC not found.")
@@ -676,6 +720,7 @@ class CommandManager(private val plugin: Story) {
 					fullText = response,
 					typingSpeed = typingSpeed,
 					radius = plugin.config.chatRadius,
+					npcContext = npcContext,
 					messageFormat = "<npc_typing><npc_text>",
 				)
 
@@ -862,18 +907,435 @@ class CommandManager(private val plugin: Story) {
 	 * @return String containing only the JSON object
 	 */
 	private fun extractJsonFromString(input: String): String {
-		// Find the first { and last } to extract the JSON object
-		val startIndex = input.indexOf("{")
-		val endIndex = input.lastIndexOf("}")
+		// First try to find JSON array (for NPC plans)
+		val arrayStartIndex = input.indexOf("[")
+		val arrayEndIndex = input.lastIndexOf("]")
 
-		if (startIndex >= 0 && endIndex > startIndex) {
-			return input.substring(startIndex, endIndex + 1)
+		if (arrayStartIndex >= 0 && arrayEndIndex > arrayStartIndex) {
+			return input.substring(arrayStartIndex, arrayEndIndex + 1)
 		}
 
-		// If no JSON object found, return the original string
+		// Fallback to JSON object extraction
+		val objectStartIndex = input.indexOf("{")
+		val objectEndIndex = input.lastIndexOf("}")
+
+		if (objectStartIndex >= 0 && objectEndIndex > objectStartIndex) {
+			return input.substring(objectStartIndex, objectEndIndex + 1)
+		}
+
+		// If no JSON found, return the original string
 		return input
 	}
 
 	// Helper data class for Gson parsing
 	data class NPCInfo(val context: String? = null, val appearance: String? = null)
+
+	/**
+	 * Executes the multi-agent NPC population system for a location
+	 */
+	private fun executeLocationNPCPopulation(
+		sender: org.bukkit.command.CommandSender,
+		location: String,
+		context: String,
+		npcCount: Int,
+		debug: Boolean,
+	) {
+		// Step 1: Location Analysis
+		sender.sendInfo("🔍 Step 1: Analyzing location '$location'...")
+
+		val storyLocation = plugin.locationManager.getLocation(location)!!
+
+		plugin.askForPermission(
+			"📊 Location Analysis Complete\n" +
+				"Location: $location\n" +
+				"Context: ${storyLocation.context.joinToString(", ")}\n" +
+				"Parent: ${storyLocation.parentLocationName ?: "None"}\n" +
+				"User Context: $context\n\n" +
+				"Proceed with NPC planning phase?",
+			Runnable {
+				executeNPCPlanning(sender, location, context, npcCount, debug)
+			},
+			Runnable {
+				sender.sendError("❌ Location analysis cancelled by user.")
+			},
+		)
+	}
+
+	/**
+	 * Step 2: AI-driven NPC planning and role generation
+	 */
+	private fun executeNPCPlanning(
+		sender: org.bukkit.command.CommandSender,
+		location: String,
+		context: String,
+		npcCount: Int,
+		debug: Boolean,
+	) {
+		sender.sendInfo("🧠 Step 2: Planning NPC population...")
+
+		val storyLocation = plugin.locationManager.getLocation(location)!!
+
+		// Build planning prompt
+		val messages = mutableListOf<ConversationMessage>()
+
+		// Add location context
+		messages.add(
+			ConversationMessage(
+				"system",
+				storyLocation.getContextForPrompt(plugin.locationManager),
+			),
+		)
+
+		// Add general world context
+		messages.add(
+			ConversationMessage(
+				"system",
+				plugin.npcContextGenerator.getGeneralContexts().joinToString("\n"),
+			),
+		)
+
+		// Add relevant lore
+		val loreContexts = plugin.lorebookManager.findLoresByKeywords("$location $context")
+		if (loreContexts.isNotEmpty()) {
+			messages.add(
+				ConversationMessage(
+					"system",
+					"Relevant lore:\n" +
+						loreContexts.joinToString("\n\n") { "- ${it.loreName}: ${it.context}" },
+				),
+			)
+		}
+
+		// Use PromptService to get the NPC population planning prompt
+		val planningPrompt = plugin.promptService.getNpcPopulationPlanningPrompt(location, context, npcCount)
+
+		// Planning instruction
+		messages.add(ConversationMessage("system", planningPrompt))
+
+		if (debug) {
+			sender.sendInfo("🐛 Sending planning request to AI...")
+		}
+
+		plugin.getAIResponse(messages, lowCost = false).thenAccept { response ->
+			Bukkit.getScheduler().runTask(
+				plugin,
+				Runnable {
+					if (response.isNullOrEmpty()) {
+						sender.sendError("❌ Failed to generate NPC plan")
+						return@Runnable
+					}
+
+					try {
+						val npcPlans = parseNPCPlans(response)
+						if (npcPlans.isEmpty()) {
+							sender.sendError("❌ No valid NPC plans generated")
+							return@Runnable
+						}
+
+						sender.sendSuccess("✅ Generated plans for ${npcPlans.size} NPCs")
+
+						// Show preview of planned NPCs
+						val preview = npcPlans.take(3).joinToString("\n") { plan ->
+							"• ${plan.name} (${plan.role}): ${plan.background.take(80)}..."
+						}
+
+						plugin.askForPermission(
+							"📋 NPC Planning Complete\n" +
+								"Generated ${npcPlans.size} NPC plans:\n\n$preview\n" +
+								(if (npcPlans.size > 3) "\n...and ${npcPlans.size - 3} more\n" else "") +
+								"\nProceed with NPC generation?",
+							{
+								executeNPCGeneration(sender, location, npcPlans, debug)
+							},
+							{
+								sender.sendError("❌ NPC planning cancelled by user.")
+							},
+						)
+					} catch (e: Exception) {
+						sender.sendError("❌ Failed to parse NPC plans: ${e.message}")
+						if (debug) {
+							plugin.logger.warning("NPC plan parsing error: ${e.message}")
+							plugin.logger.warning("Raw response: $response")
+						}
+					}
+				},
+			)
+		}.exceptionally { e ->
+			Bukkit.getScheduler().runTask(
+				plugin,
+				Runnable {
+					sender.sendError("❌ AI planning failed: ${e.message}")
+				},
+			)
+			null
+		}
+	}
+
+	/**
+	 * Step 3: Generate individual NPCs with full context and appearance
+	 */
+	private fun executeNPCGeneration(
+		sender: org.bukkit.command.CommandSender,
+		location: String,
+		npcPlans: List<NPCPlan>,
+		debug: Boolean,
+	) {
+		sender.sendInfo("⚡ Step 3: Generating ${npcPlans.size} NPCs...")
+
+		val storyLocation = plugin.locationManager.getLocation(location)!!
+		val generatedNPCs = mutableListOf<String>()
+		var completedCount = 0
+
+		// Generate NPCs concurrently
+		val futures = npcPlans.map { plan ->
+			generateSingleNPC(plan, storyLocation, debug).thenApply { success ->
+				if (success) {
+					synchronized(generatedNPCs) {
+						generatedNPCs.add(plan.name)
+						completedCount++
+						sender.sendInfo("✅ Generated NPC $completedCount/${npcPlans.size}: ${plan.name}")
+					}
+				} else {
+					sender.sendError("❌ Failed to generate NPC: ${plan.name}")
+				}
+				success
+			}
+		}
+
+		CompletableFuture.allOf(*futures.toTypedArray()).thenRun {
+			Bukkit.getScheduler().runTask(
+				plugin,
+				Runnable {
+					val successCount = generatedNPCs.size
+					sender.sendSuccess("🎉 Generated $successCount/${npcPlans.size} NPCs successfully!")
+
+					if (successCount > 0) {
+						val npcUtils = com.canefe.story.npc.util.NPCUtils.getInstance(plugin)
+						// Let's create citizens npcs at the target location.
+						// for npc in generatedNPCs, create a citizen npc if it doesn't already exist
+						for (npcName in generatedNPCs) {
+							if (npcUtils.getNPCByNameAsync(npcName) != null) {
+								// spawn npc at location
+								val npc = CitizensAPI.getNPCRegistry().createNPC(EntityType.PLAYER, npcName)
+								val spawnLocation = storyLocation.bukkitLocation
+
+								npc.spawn(spawnLocation)
+							}
+						}
+
+						plugin.askForPermission(
+							"🧠 NPC Generation Complete\n" +
+								"Successfully generated $successCount NPCs:\n" +
+								generatedNPCs.joinToString(", ") + "\n\n" +
+								"Proceed with memory and relationship generation?",
+							{
+								executeMemoryGeneration(sender, generatedNPCs, npcPlans, debug)
+							},
+							{
+								sender.sendInfo("✅ NPC generation completed. Skipping memory generation.")
+							},
+						)
+					}
+				},
+			)
+		}
+	}
+
+	/**
+	 * Step 4: Generate core memories and relationships
+	 */
+	private fun executeMemoryGeneration(
+		sender: org.bukkit.command.CommandSender,
+		generatedNPCs: List<String>,
+		npcPlans: List<NPCPlan>,
+		debug: Boolean,
+	) {
+		sender.sendInfo("🧠 Step 4: Generating memories and relationships...")
+
+		val memoryFutures = mutableListOf<CompletableFuture<Void>>()
+		var completedMemories = 0
+
+		for (npcName in generatedNPCs) {
+			val npcPlan = npcPlans.find { it.name == npcName } ?: continue
+
+			// Generate core background memories
+			val coreMemoryFuture = plugin.npcResponseService.generateNPCMemory(
+				npcName,
+				"experience",
+				"Core background: ${npcPlan.background}. Key relationships: ${npcPlan.relationships}. Current situation: ${npcPlan.situation}",
+			).thenAccept { memory ->
+				if (memory != null) {
+					synchronized(this) {
+						completedMemories++
+						sender.sendInfo("💭 Generated core memory $completedMemories/${generatedNPCs.size}: $npcName")
+					}
+				}
+			}
+
+			memoryFutures.add(coreMemoryFuture.thenApply { null })
+
+			// Generate recent event memories if there are relationships
+			if (npcPlan.relationships.isNotEmpty()) {
+				val recentMemoryFuture = plugin.npcResponseService.generateNPCMemory(
+					npcName,
+					"event",
+					"Recent interactions and developments: ${npcPlan.relationships}. Current goals: ${npcPlan.situation}",
+				).thenAccept { memory ->
+					if (memory != null && debug) {
+						sender.sendInfo("🔄 Generated recent memory for: $npcName")
+					}
+				}
+
+				memoryFutures.add(recentMemoryFuture.thenApply { null })
+			}
+		}
+
+		CompletableFuture.allOf(*memoryFutures.toTypedArray()).thenRun {
+			Bukkit.getScheduler().runTask(
+				plugin,
+				Runnable {
+					sender.sendSuccess("🎉 Location NPC population complete!")
+					sender.sendInfo("📊 Summary:")
+					sender.sendInfo("• ${generatedNPCs.size} NPCs generated")
+					sender.sendInfo("• $completedMemories core memories created")
+					sender.sendInfo("• Relationships established between NPCs")
+					sender.sendInfo("• NPCs are ready for interaction")
+				},
+			)
+		}
+	}
+
+	/**
+	 * Generates a single NPC with full context and appearance
+	 */
+	private fun generateSingleNPC(plan: NPCPlan, location: StoryLocation, debug: Boolean): CompletableFuture<Boolean> {
+		val future = CompletableFuture<Boolean>()
+
+		// Create the context for this NPC
+		val npcContext = plugin.npcContextGenerator.getOrCreateContextForNPC(plan.name)
+
+		if (npcContext == null) {
+			future.complete(false)
+			return future
+		}
+
+		// Generate detailed context and appearance using AI
+		val messages = mutableListOf<ConversationMessage>()
+
+		// Add location context
+		messages.add(
+			ConversationMessage(
+				"system",
+				location.getContextForPrompt(plugin.locationManager),
+			),
+		)
+
+		// Add general context
+		messages.add(
+			ConversationMessage(
+				"system",
+				plugin.npcContextGenerator.getGeneralContexts().joinToString("\n"),
+			),
+		)
+
+		// Use PromptService to get the single NPC generation prompt
+		val singleNpcPrompt = plugin.promptService.getSingleNpcGenerationPrompt(
+			plan.name,
+			plan.role,
+			plan.background,
+			plan.personality,
+			plan.relationships,
+			plan.situation,
+		)
+
+		// Generation instruction
+		messages.add(ConversationMessage("system", singleNpcPrompt))
+
+		plugin.getAIResponse(messages, lowCost = false).thenAccept { response ->
+			Bukkit.getScheduler().runTask(
+				plugin,
+				Runnable {
+					try {
+						if (response.isNullOrEmpty()) {
+							future.complete(false)
+							return@Runnable
+						}
+
+						val jsonContent = extractJsonFromString(response)
+						val gson = com.google.gson.Gson()
+						val npcInfo = gson.fromJson(jsonContent, NPCInfo::class.java)
+
+						val context = npcInfo.context ?: plan.background
+						val appearance = npcInfo.appearance ?: "A ${plan.role.lowercase()} with an unremarkable appearance."
+
+						// Create and save NPC data
+						val expandedContext = "${npcContext.context} $context"
+						val npcData = com.canefe.story.npc.data.NPCData(
+							plan.name,
+							plan.role,
+							location,
+							expandedContext,
+						)
+
+						npcData.appearance = appearance
+						plugin.npcDataManager.saveNPCData(plan.name, npcData)
+
+						if (debug) {
+							plugin.logger.info("Generated NPC: ${plan.name} - ${plan.role}")
+						}
+
+						future.complete(true)
+					} catch (e: Exception) {
+						if (debug) {
+							plugin.logger.warning("Failed to generate NPC ${plan.name}: ${e.message}")
+						}
+						future.complete(false)
+					}
+				},
+			)
+		}.exceptionally { e ->
+			if (debug) {
+				plugin.logger.warning("AI generation failed for ${plan.name}: ${e.message}")
+			}
+			future.complete(false)
+			null
+		}
+
+		return future
+	}
+
+	/**
+	 * Parses AI response into NPC plans
+	 */
+	private fun parseNPCPlans(response: String): List<NPCPlan> {
+		return try {
+			val jsonContent = extractJsonFromString(response)
+			if (plugin.config.debugMessages) {
+				plugin.logger.info("Extracted JSON content: $jsonContent")
+			}
+
+			val gson = com.google.gson.Gson()
+			val plans = gson.fromJson(jsonContent, Array<NPCPlan>::class.java)
+			plans.toList()
+		} catch (e: Exception) {
+			plugin.logger.warning("Failed to parse NPC plans: ${e.message}")
+			if (plugin.config.debugMessages) {
+				plugin.logger.warning("Raw response: $response")
+				e.printStackTrace()
+			}
+			emptyList()
+		}
+	}
+
+	/**
+	 * Data class for NPC planning
+	 */
+	data class NPCPlan(
+		val name: String,
+		val role: String,
+		val background: String,
+		val personality: String,
+		val relationships: String,
+		val situation: String,
+	)
 }

@@ -5,7 +5,8 @@ import org.bukkit.configuration.file.FileConfiguration
 
 @Suppress("MagicNumber")
 class ConfigService(private val plugin: Story) {
-	private val config: FileConfiguration get() = plugin.configFile
+	private val config: FileConfiguration
+		get() = plugin.configFile
 
 	// OpenAI API settings
 	var openAIKey: String = ""
@@ -33,11 +34,16 @@ class ConfigService(private val plugin: Story) {
 	var responseDelay: Double = 2.0
 	var mythicMobsEnabled: Boolean = true
 	var streamMessages: Boolean = true
-	var behavioralDirectivesEnabled: Boolean = true // Whether to generate behavioral directives for NPCs
+	var behavioralDirectivesEnabled: Boolean =
+		true // Whether to generate behavioral directives for NPCs
+	var dialoguePathSelectionEnabled: Boolean =
+		false // Whether to enable dialogue path selection for DMs
+	var delayedPlayerMessageProcessing: Boolean =
+		false // Whether to delay player message processing like /g command
 
-	/*
-	NPC Behavior settings
-	 */
+    /*
+    NPC Behavior settings
+     */
 
 	// Delay in seconds before NPCs start rotating their heads
 	var headRotationDelay: Int = 2
@@ -75,8 +81,10 @@ class ConfigService(private val plugin: Story) {
 
 	// Misc
 	var maxBookCharactersPerPage: Int = 180
+	var maxLineWidth: Int = 50 // Maximum characters per line for NPC messages
 	var broadcastSessionEntries: Boolean = true // Whether to broadcast session entries to players
 	var debugMessages: Boolean = false // Enable debug messages for development
+	var messagePrefix: String = "<dark_gray>[<gold>Story</gold>]</dark_gray> "
 
 	// Skills
 	var skillProvider: String = "MMOCore" // Default skill provider
@@ -119,6 +127,7 @@ class ConfigService(private val plugin: Story) {
 			plugin.relationshipManager.load()
 			plugin.sessionManager.load()
 			plugin.voiceManager.load()
+			plugin.npcNameManager.reloadNameBanks()
 		} catch (e: Exception) {
 			plugin.logger.severe("Failed to reload configuration: ${e.message}")
 		} finally {
@@ -129,11 +138,15 @@ class ConfigService(private val plugin: Story) {
 	private fun loadConfigValues() {
 		openAIKey = config.getString("openrouter.apikey", "") ?: ""
 		aiModel =
-			config.getString("openrouter.aiModel", "meta-llama/llama-3.3-70b-instruct") ?: "meta-llama/llama-3.3-70b-instruct"
+			config.getString("openrouter.aiModel", "meta-llama/llama-3.3-70b-instruct")
+				?: "meta-llama/llama-3.3-70b-instruct"
 
-		maxTokens = config.getInt("openrouter.maxTokens", 500) // Default max tokens for AI responses
+		maxTokens =
+			config.getInt("openrouter.maxTokens", 500) // Default max tokens for AI responses
 
-		aiConversationModel = config.getString("openrouter.aiConversationModel") ?: "meta-llama/llama-3.3-70b-instruct"
+		aiConversationModel =
+			config.getString("openrouter.aiConversationModel")
+				?: "meta-llama/llama-3.3-70b-instruct"
 
 		// Conversation Settings
 		chatEnabled = config.getBoolean("conversation.chatEnabled", true)
@@ -144,9 +157,27 @@ class ConfigService(private val plugin: Story) {
 		chatRadius = config.getDouble("conversation.chatRadius", 5.0)
 		responseDelay = config.getDouble("conversation.responseDelay", 2.0)
 		mythicMobsEnabled =
-			config.getBoolean("conversation.mythicMobsEnabled", true) // MythicMobs integration enabled
-		streamMessages = config.getBoolean("conversation.streamMessages", true) // Stream messages to players
-		behavioralDirectivesEnabled = config.getBoolean("conversation.behavioralDirectivesEnabled", true) // Whether to generate behavioral directives for NPCs
+			config.getBoolean(
+				"conversation.mythicMobsEnabled",
+				true,
+			) // MythicMobs integration enabled
+		streamMessages =
+			config.getBoolean("conversation.streamMessages", true) // Stream messages to players
+		behavioralDirectivesEnabled =
+			config.getBoolean(
+				"conversation.behavioralDirectivesEnabled",
+				true,
+			) // Whether to generate behavioral directives for NPCs
+		dialoguePathSelectionEnabled =
+			config.getBoolean(
+				"conversation.dialoguePathSelectionEnabled",
+				false,
+			) // Whether to enable dialogue path selection for DMs
+		delayedPlayerMessageProcessing =
+			config.getBoolean(
+				"conversation.delayedPlayerMessageProcessing",
+				false,
+			) // Whether to delay player message processing like /g command
 
 		// NPC Behavior Settings
 		headRotationDelay = config.getInt("npc.headRotationDelay", 2)
@@ -169,24 +200,37 @@ class ConfigService(private val plugin: Story) {
 
 		// Miscellaneous settings
 		maxBookCharactersPerPage = config.getInt("misc.maxBookCharactersPerPage", 180)
+		maxLineWidth = config.getInt("misc.maxLineWidth", 50) // New config for maximum line width
 		broadcastSessionEntries = config.getBoolean("misc.broadcastSessionEntries", true)
 		debugMessages = config.getBoolean("misc.debugMessages", false)
+		messagePrefix =
+			config.getString(
+				"misc.messagePrefix",
+				"<dark_gray>[<gold>Story</gold>]</dark_gray>",
+			)
+				?: "<dark_gray>[<gold>Story</gold>]</dark_gray>"
 
 		// Skills
 		skillProvider = config.getString("misc.skillProvider", "MMOCore") ?: "MMOCore"
 
 		voiceGenerationEnabled = config.getBoolean("misc.voiceGenerationEnabled", true)
-		playerVoiceGenerationEnabled = config.getBoolean("misc.playerVoiceGenerationEnabled", true) // New config for player voices
+		playerVoiceGenerationEnabled =
+			config.getBoolean(
+				"misc.playerVoiceGenerationEnabled",
+				true,
+			) // New config for player voices
 
 		elevenLabsApiKey = config.getString("misc.elevenLabsApiKey", "") ?: ""
-		elevenLabsVoices = config.getConfigurationSection("misc.elevenLabsVoices")
-			?.getKeys(false)
-			?.associateWith { key ->
-				config.getString("misc.elevenLabsVoices.$key") ?: ""
-			}
-			?: emptyMap()
+		elevenLabsVoices =
+			config.getConfigurationSection("misc.elevenLabsVoices")
+				?.getKeys(false)
+				?.associateWith { key ->
+					config.getString("misc.elevenLabsVoices.$key") ?: ""
+				}
+				?: emptyMap()
 
-		scheduleVoiceGenerationEnabled = config.getBoolean("misc.scheduleVoiceGenerationEnabled", true)
+		scheduleVoiceGenerationEnabled =
+			config.getBoolean("misc.scheduleVoiceGenerationEnabled", true)
 		scheduleDialogueCooldown =
 			config.getInt("misc.scheduleDialogueCooldown", 60) // 1 minutes default
 
@@ -200,10 +244,7 @@ class ConfigService(private val plugin: Story) {
 		dailyEventsEnabled = config.getBoolean("faction.dailyEventsEnabled", true)
 		dailyEventsChance = config.getDouble("faction.dailyEventsChance", 0.15)
 		followedSettlements =
-			config
-				.getStringList("faction.followedSettlements")
-				.map { it.toString() }
-				.toList()
+			config.getStringList("faction.followedSettlements").map { it.toString() }.toList()
 	}
 
 	fun save() {
@@ -223,6 +264,8 @@ class ConfigService(private val plugin: Story) {
 		config.set("conversation.mythicMobsEnabled", mythicMobsEnabled)
 		config.set("conversation.streamMessages", streamMessages)
 		config.set("conversation.behavioralDirectivesEnabled", behavioralDirectivesEnabled)
+		config.set("conversation.dialoguePathSelectionEnabled", dialoguePathSelectionEnabled)
+		config.set("conversation.delayedPlayerMessageProcessing", delayedPlayerMessageProcessing)
 
 		// NPC Behavior settings
 		config.set("npc.headRotationDelay", headRotationDelay)
@@ -243,8 +286,10 @@ class ConfigService(private val plugin: Story) {
 
 		// Miscellaneous settings
 		config.set("misc.maxBookCharactersPerPage", maxBookCharactersPerPage)
+		config.set("misc.maxLineWidth", maxLineWidth) // Save maxLineWidth config
 		config.set("misc.broadcastSessionEntries", broadcastSessionEntries)
 		config.set("misc.debugMessages", debugMessages)
+		config.set("misc.messagePrefix", messagePrefix)
 		config.set("misc.skillProvider", skillProvider)
 
 		config.set("misc.voiceGenerationEnabled", voiceGenerationEnabled)

@@ -5,45 +5,30 @@ import net.kyori.adventure.text.Component
 import org.bukkit.command.CommandSender
 
 object Msg {
-	private val prefix = "<dark_gray>[<gold>Story</gold>]</dark_gray> "
+	private val prefix = Story.instance.config.messagePrefix
 	private val mm = Story.instance.miniMessage
 
 	fun format(message: String): Component {
 		return mm.deserialize(prefix + message)
 	}
 
-	fun send(
-		sender: CommandSender,
-		message: String,
-	) {
+	fun send(sender: CommandSender, message: String) {
 		sender.sendMessage(format(message))
 	}
 
-	fun sendNoPrefix(
-		sender: CommandSender,
-		message: String,
-	) {
+	fun sendNoPrefix(sender: CommandSender, message: String) {
 		sender.sendMessage(mm.deserialize(message))
 	}
 
-	fun error(
-		sender: CommandSender,
-		message: String,
-	) {
+	fun error(sender: CommandSender, message: String) {
 		send(sender, "<red>$message")
 	}
 
-	fun success(
-		sender: CommandSender,
-		message: String,
-	) {
+	fun success(sender: CommandSender, message: String) {
 		send(sender, "<green>$message")
 	}
 
-	fun info(
-		sender: CommandSender,
-		message: String,
-	) {
+	fun info(sender: CommandSender, message: String) {
 		send(sender, "<gray>$message")
 	}
 

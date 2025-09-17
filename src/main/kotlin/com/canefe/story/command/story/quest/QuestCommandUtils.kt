@@ -183,7 +183,9 @@ class QuestCommandUtils {
 				// get cur page index
 				var pageIndex = meta.pages().size
 				if (pageIndex == 0) {
-					meta.addPages(story.miniMessage.deserialize("<#8e44ad>Memory</#8e44ad>\n")) // Ensure we start with at least one page
+					meta.addPages(
+						story.miniMessage.deserialize("<#8e44ad>Memory</#8e44ad>\n"),
+					) // Ensure we start with at least one page
 					pageIndex = 1
 				}
 				// Add memory title

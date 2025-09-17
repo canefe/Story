@@ -86,7 +86,6 @@ data class StoryLocation(
 	}
 
 	// Override toString to match the original format exactly
-	override fun toString(): String =
-		"Location{name='$name', bukkitLocation=$bukkitLocation, " +
-			"context=$context, parent='$parentLocationName'}"
+	override fun toString(): String = "Location{name='$name', bukkitLocation=$bukkitLocation, " +
+		"context=$context, parent='$parentLocationName'}"
 }

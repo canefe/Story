@@ -127,10 +127,7 @@ class MythicMobsHandler(private val plugin: JavaPlugin) {
 	/**
 	 * Set a MythicMob as being in a conversation
 	 */
-	fun setMythicMobInConversation(
-		entity: Entity,
-		inConversation: Boolean,
-	) {
+	fun setMythicMobInConversation(entity: Entity, inConversation: Boolean) {
 		val mm = MythicBukkit.inst()
 		val activeMobOptional = mm.mobManager.getActiveMob(entity.uniqueId)
 
@@ -251,10 +248,7 @@ class MythicMobsHandler(private val plugin: JavaPlugin) {
 	/**
 	 * Look at a target (player)
 	 */
-	fun lookAtTarget(
-		entity: Entity,
-		target: Entity,
-	) {
+	fun lookAtTarget(entity: Entity, target: Entity) {
 		if (entity !is LivingEntity) return
 
 		// Calculate direction vector from entity to target

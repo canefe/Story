@@ -171,11 +171,7 @@ class WorldInformationManager(
 		}
 	}
 
-	private fun propagateToParentLocations(
-		locationName: String,
-		information: String,
-		importance: String,
-	) {
+	private fun propagateToParentLocations(locationName: String, information: String, importance: String) {
 		// Get location
 		val location = plugin.locationManager.getLocation(locationName) ?: return
 
@@ -222,11 +218,7 @@ class WorldInformationManager(
 		return info
 	}
 
-	private fun addPersonalKnowledge(
-		npcName: String,
-		information: String,
-		importance: String,
-	) {
+	private fun addPersonalKnowledge(npcName: String, information: String, importance: String) {
 		try {
 			// Get the NPC's existing data
 			val npcData = plugin.npcDataManager.getNPCData(npcName) ?: return
@@ -251,11 +243,7 @@ class WorldInformationManager(
 		}
 	}
 
-	private fun addLocationRumor(
-		locationName: String,
-		information: String,
-		importance: String,
-	) {
+	private fun addLocationRumor(locationName: String, information: String, importance: String) {
 		try {
 			// Get the location from the location manager
 			val location = plugin.locationManager.getLocation(locationName) ?: return

@@ -338,6 +338,13 @@ class NPCBehaviorManager(private val plugin: Story) {
 	}
 
 	private fun showIdleHologram(npc: NPC) {
+		// if in conversation, do not show idle hologram
+		plugin.conversationManager.getConversation(npc)?.let { conversation ->
+			if (conversation.lastSpeakingNPC == npc) {
+				return
+			}
+		}
+
 		val idleActions =
 			listOf(
 				"&7&osighs",

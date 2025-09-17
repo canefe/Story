@@ -1,5 +1,6 @@
 package com.canefe.story.command.story.quest
 
+import com.canefe.story.context.ContextExtractor
 import com.canefe.story.conversation.ConversationMessage
 import com.canefe.story.util.Msg.sendError
 import com.canefe.story.util.Msg.sendSuccess
@@ -12,7 +13,6 @@ import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.meta.BookMeta
 import org.json.simple.JSONObject
 import org.json.simple.parser.JSONParser
-import kotlin.text.isNotEmpty
 
 class QuestBookCommand(
 	private val commandUtils: QuestCommandUtils,
@@ -26,105 +26,21 @@ class QuestBookCommand(
 					val context = args["context"] as String
 					val story = commandUtils.story
 
-					// Find relevant lore related to the context
-					val loreContexts = story.lorebookManager.findLoresByKeywords(context)
-					val loreInfo =
-						if (loreContexts.isNotEmpty()) {
-							"Relevant lore found: " + loreContexts.joinToString(", ") { it.loreName }
-						} else {
-							"No relevant lore found for the given context."
-						}
+					// Extract context using the centralized ContextExtractor
+					val contextExtractor = ContextExtractor(story)
+					val extractedContext = contextExtractor.extractContext(context)
 
 					player.sendSuccess("Generating quest book with context: '$context'")
-					player.sendSuccess(loreInfo)
 
-					// Include relevant lore in the prompt
-					val loreContext =
-						if (loreContexts.isNotEmpty()) {
-							"\n\nInclude these world lore elements in your writing:\n" +
-								loreContexts.joinToString("\n\n") { "- ${it.loreName}: ${it.context}" }
-						} else {
-							""
-						}
-
-					// Find relevant locations mentioned in the prompt
-					val locationKeywords =
-						context
-							.split(" ")
-							.filter { it.length > 3 } // Only consider words with more than 3 characters
-							.distinct()
-
-					val relevantLocations = mutableListOf<String>()
-					val locationContexts = mutableListOf<String>()
-
-					// Check if any location names match our keywords
-					locationKeywords.forEach { keyword ->
-						story.locationManager.getAllLocations().forEach { location ->
-							if (location.name.equals(keyword, ignoreCase = true) && location.context.isNotEmpty()) {
-								relevantLocations.add(location.name)
-								location.context.forEach { ctx ->
-									locationContexts.add("${location.name}: $ctx")
-								}
-							}
-						}
+					// Send info messages to player
+					extractedContext.generateInfoMessages().forEach { message ->
+						player.sendSuccess(message)
 					}
 
-					val locationInfo =
-						if (relevantLocations.isNotEmpty()) {
-							"Relevant locations found: ${relevantLocations.joinToString(", ")}"
-						} else {
-							"No relevant locations found for the given prompt."
-						}
-
-					player.sendSuccess(locationInfo)
-
-					// Check any NPCs mentioned in the prompt
-					val npcKeywords =
-						context
-							.split(" ")
-							.filter { it.length > 3 } // Only consider words with more than 3 characters
-							.distinct()
-
-					val relevantNPCs = mutableListOf<String>()
-					val npcContexts = mutableListOf<String>()
-
-					// Check if any NPC names match our keywords
-					npcKeywords.forEach { keyword ->
-						story.npcDataManager.getAllNPCNames().forEach { npcName ->
-							if (npcName.equals(keyword, ignoreCase = true)) {
-								relevantNPCs.add(npcName)
-								val npcContext = story.npcContextGenerator.getOrCreateContextForNPC(npcName)
-								val lastFewMemories = npcContext?.getMemoriesForPrompt(story.timeService, 3)
-								if (npcContext != null) {
-									npcContexts.add("$npcName's context: ${npcContext.context} ")
-									if (lastFewMemories != null && lastFewMemories.isNotEmpty()) {
-										npcContexts.add("$npcName's recent memories: $lastFewMemories")
-									}
-								}
-							}
-						}
-					}
-
-					val npcInfo =
-						if (relevantNPCs.isNotEmpty()) {
-							"Relevant NPCs found: ${relevantNPCs.joinToString(", ")}"
-						} else {
-							"No relevant NPCs found for the given prompt."
-						}
-
-					player.sendSuccess(npcInfo)
-
-					// Create messages for AI prompt
-					val questBookPrompt = story.promptService.getQuestBookPrompt(
-						loreContext,
-						locationInfo,
-						if (relevantNPCs.isNotEmpty()) {
-							"Relevant NPCs found: ${relevantNPCs.joinToString(", ")}\n" +
-								npcContexts.joinToString("\n")
-						} else {
-							""
-						}
-					)
+					// Create messages for AI prompt using extracted context
+					val contextInformation = extractedContext.generatePromptContext()
+					val questBookPrompt =
+						story.promptService.getQuestBookPrompt(contextInformation)
 
 					val messages =
 						mutableListOf(
@@ -133,8 +49,7 @@ class QuestBookCommand(
 						)
 
 					// Get AI response
-					story
-						.getAIResponse(messages)
+					story.getAIResponse(messages)
 						.thenAccept { aiResponse ->
 							if (aiResponse == null) {
 								player.sendError("Failed to generate book content")
@@ -143,10 +58,13 @@ class QuestBookCommand(
 
 							try {
 								// Parse the JSON response
-								val (title, content) = extractBookContentFromJSON(aiResponse)
+								val (title, content) =
+									extractBookContentFromJSON(aiResponse)
 
-								if (content.isBlank()) {
-									player.sendError("Failed to parse book content from AI response")
+								if (content.isEmpty()) {
+									player.sendError(
+										"Failed to parse book content from AI response",
+									)
 									return@thenAccept
 								}
 
@@ -162,26 +80,41 @@ class QuestBookCommand(
 								meta.author(Component.text("Unknown"))
 
 								// Add pages to the book
-								meta.addPages(*pages.map { story.miniMessage.deserialize(it) }.toTypedArray())
+								meta.addPages(
+									*pages
+										.map {
+											story.miniMessage.deserialize(it)
+										}
+										.toTypedArray(),
+								)
 
 								book.itemMeta = meta
 
 								// Give the book to the player
 								if (player.inventory.firstEmpty() != -1) {
 									player.inventory.addItem(book)
-									player.sendSuccess("Quest book generated (${pages.size} pages) and added to your inventory")
+									player.sendSuccess(
+										"Quest book generated (${pages.size} pages) and added to your inventory",
+									)
 								} else {
 									player.world.dropItem(player.location, book)
-									player.sendSuccess("Quest book generated and dropped at your feet (inventory full)")
+									player.sendSuccess(
+										"Quest book generated and dropped at your feet (inventory full)",
+									)
 								}
 							} catch (e: Exception) {
 								player.sendError("Failed to create book: ${e.message}")
-								story.logger.warning("Error creating quest book: ${e.message}")
+								story.logger.warning(
+									"Error creating quest book: ${e.message}",
+								)
 								e.printStackTrace()
 							}
-						}.exceptionally { e ->
+						}
+						.exceptionally { e ->
 							player.sendError("Error generating book: ${e.message}")
-							story.logger.warning("Error in AI response for quest book: ${e.message}")
+							story.logger.warning(
+								"Error in AI response for quest book: ${e.message}",
+							)
 							e.printStackTrace()
 							null
 						}

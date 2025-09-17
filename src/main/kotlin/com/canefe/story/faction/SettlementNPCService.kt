@@ -14,10 +14,7 @@ class SettlementNPCService(
 	/**
 	 * Creates an NPC for a settlement leader
 	 */
-	fun createNPCForLeader(
-		settlement: Settlement,
-		leader: Leader,
-	): NPC? {
+	fun createNPCForLeader(settlement: Settlement, leader: Leader): NPC? {
 		if (leader.name.isBlank()) return null
 
 		try {
@@ -190,11 +187,7 @@ class SettlementNPCService(
 	/**
 	 * Update an existing NPC with leader data
 	 */
-	fun updateNPCWithLeaderData(
-		settlement: Settlement,
-		npc: NPC,
-		leader: Leader,
-	) {
+	fun updateNPCWithLeaderData(settlement: Settlement, npc: NPC, leader: Leader) {
 		// Implementation to update NPC skin, traits, etc.
 		// ...
 	}
@@ -202,14 +195,10 @@ class SettlementNPCService(
 	/**
 	 * Build context string for leader to send to AI
 	 */
-	private fun buildLeaderContext(
-		settlement: Settlement,
-		leader: Leader,
-	): String =
-		"Leader context:\n" +
-			"Name: ${leader.title} ${leader.name}\n" +
-			"Stats: Diplomacy ${leader.diplomacy}, Martial ${leader.martial}, " +
-			"Stewardship ${leader.stewardship}, Intrigue ${leader.intrigue}, " +
-			"Charisma ${leader.charisma}\n" +
-			"Traits: ${leader.traits.joinToString(", ") { it.name }}"
+	private fun buildLeaderContext(settlement: Settlement, leader: Leader): String = "Leader context:\n" +
+		"Name: ${leader.title} ${leader.name}\n" +
+		"Stats: Diplomacy ${leader.diplomacy}, Martial ${leader.martial}, " +
+		"Stewardship ${leader.stewardship}, Intrigue ${leader.intrigue}, " +
+		"Charisma ${leader.charisma}\n" +
+		"Traits: ${leader.traits.joinToString(", ") { it.name }}"
 }

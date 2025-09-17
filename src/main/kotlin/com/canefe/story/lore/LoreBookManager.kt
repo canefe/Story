@@ -108,10 +108,7 @@ class LoreBookManager private constructor(
 		plugin.logger.info("Loaded ${loreBooks.size} lorebooks")
 	}
 
-	fun findRelevantLoreContexts(
-		message: String,
-		conversation: Conversation,
-	): List<LoreContext> {
+	fun findRelevantLoreContexts(message: String, conversation: Conversation): List<LoreContext> {
 		val relevantContexts = mutableListOf<LoreContext>()
 		val messageLower = message.lowercase()
 		val addedLoreNames = HashSet<String>() // Track lorebooks added in this call
@@ -219,9 +216,8 @@ class LoreBookManager private constructor(
 		private var instance: LoreBookManager? = null
 
 		@JvmStatic
-		fun getInstance(plugin: Story): LoreBookManager =
-			instance ?: synchronized(this) {
-				instance ?: LoreBookManager(plugin).also { instance = it }
-			}
+		fun getInstance(plugin: Story): LoreBookManager = instance ?: synchronized(this) {
+			instance ?: LoreBookManager(plugin).also { instance = it }
+		}
 	}
 }

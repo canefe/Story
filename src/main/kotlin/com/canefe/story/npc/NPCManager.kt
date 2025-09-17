@@ -53,7 +53,7 @@ class NPCManager private constructor(private val plugin: Story) : Listener {
 		var lastPosition: Location,
 		var stuckCounter: Int = 0,
 		var retryAttempts: Int = 0,
-		var status: NavigationStatus = NavigationStatus.ACTIVE
+		var status: NavigationStatus = NavigationStatus.ACTIVE,
 	)
 
 	// Navigation event for history tracking
@@ -61,7 +61,7 @@ class NPCManager private constructor(private val plugin: Story) : Listener {
 		val timestamp: Long,
 		val npcName: String,
 		val event: String, // "started", "completed", "failed", "stuck", "timeout"
-		val details: String
+		val details: String,
 	)
 
 	enum class NavigationStatus {
@@ -70,7 +70,7 @@ class NPCManager private constructor(private val plugin: Story) : Listener {
 		COMPLETED,
 		FAILED,
 		CANCELLED,
-		TIMEOUT
+		TIMEOUT,
 	}
 
 	companion object {
@@ -277,6 +277,23 @@ class NPCManager private constructor(private val plugin: Story) : Listener {
 										plugin.conversationManager.cleanupHolograms(conversation)
 										// Broadcast the response to players
 										plugin.npcMessageService.broadcastNPCMessage(response, target)
+
+										// Generate final response from initiator after another delay
+										val finalResponseDelay = 4.toLong() // Delay before final response
+										Bukkit.getScheduler().scheduleSyncDelayedTask(plugin, {
+											// Get updated history including target's response
+											val updatedHistory = conversation.history.map { it.content }
+											plugin.conversationManager.handleHolograms(conversation, initiator.name)
+											// Generate the initiator's final response
+											plugin.npcResponseService.generateNPCResponse(initiator, updatedHistory, broadcast = false)
+												.thenAccept { finalResponse ->
+													// Add the final response to the conversation
+													conversation.addNPCMessage(initiator, finalResponse)
+													plugin.conversationManager.cleanupHolograms(conversation)
+													// Broadcast the final response to players
+													plugin.npcMessageService.broadcastNPCMessage(finalResponse, initiator)
+												}
+										}, finalResponseDelay * 20L) // Convert seconds to ticks
 									}
 							}, responseDelay * 20L) // Convert seconds to ticks
 						}
@@ -669,7 +686,7 @@ class NPCManager private constructor(private val plugin: Story) : Listener {
 							// Max retries reached, fail the navigation
 							Bukkit.getScheduler().cancelTask(taskIdHolder[0])
 							navigator.cancelNavigation()
-							completeNavigationTask(npc.name, false, "Max retries reached (${maxRetries})")
+							completeNavigationTask(npc.name, false, "Max retries reached ($maxRetries)")
 							onFailed?.run()
 							return@scheduleSyncRepeatingTask
 						}
@@ -681,7 +698,7 @@ class NPCManager private constructor(private val plugin: Story) : Listener {
 						val offsetTarget = targetLocation.clone().add(
 							(Math.random() - 0.5) * 2, // ±1 block X
 							0.0,
-							(Math.random() - 0.5) * 2  // ±1 block Z
+							(Math.random() - 0.5) * 2, // ±1 block Z
 						)
 
 						// Find safe ground for offset target
@@ -689,7 +706,7 @@ class NPCManager private constructor(private val plugin: Story) : Listener {
 						navigator.setTarget(safeTarget)
 
 						stuckCounter = 0 // Reset counter after attempting to fix
-						addNavigationEvent(npc.name, "retry", "Attempt ${retryAttempts}/${maxRetries}")
+						addNavigationEvent(npc.name, "retry", "Attempt $retryAttempts/$maxRetries")
 					}
 				} else {
 					stuckCounter = 0 // Reset counter if NPC is moving
@@ -847,7 +864,7 @@ class NPCManager private constructor(private val plugin: Story) : Listener {
 						navigator.setTarget(target, false)
 
 						stuckCounter = 0 // Reset counter after attempting to fix
-						addNavigationEvent(npc.name, "retry", "Entity target attempt ${retryAttempts}/${maxRetries}")
+						addNavigationEvent(npc.name, "retry", "Entity target attempt $retryAttempts/$maxRetries")
 					}
 				} else {
 					stuckCounter = 0 // Reset counter if NPC is moving
@@ -1145,7 +1162,9 @@ class NPCManager private constructor(private val plugin: Story) : Listener {
 				val distance = if (npc?.isSpawned == true) {
 					val currentDistance = npc.entity.location.distance(task.targetLocation)
 					String.format("%.1f", currentDistance)
-				} else "N/A"
+				} else {
+					"N/A"
+				}
 
 				player.sendInfo(" • ${task.npcName} (${task.status})")
 				player.sendInfo("   Target: ${task.targetType} at ${formatLocation(task.targetLocation)}")
@@ -1252,7 +1271,7 @@ class NPCManager private constructor(private val plugin: Story) : Listener {
 		targetType: String,
 		distanceMargin: Double,
 		timeout: Int,
-		taskId: Int
+		taskId: Int,
 	): NavigationTask {
 		// Cancel any existing navigation for this NPC
 		cancelNavigationForNPC(npc.name)
@@ -1266,7 +1285,7 @@ class NPCManager private constructor(private val plugin: Story) : Listener {
 			distanceMargin = distanceMargin,
 			timeout = timeout,
 			taskId = taskId,
-			lastPosition = npc.entity.location.clone()
+			lastPosition = npc.entity.location.clone(),
 		)
 
 		activeNavigationTasks[npc.name.lowercase()] = task

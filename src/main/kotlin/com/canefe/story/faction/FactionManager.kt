@@ -81,11 +81,7 @@ class FactionManager(
 	/**
 	 * Create a new faction
 	 */
-	fun createFaction(
-		id: String,
-		name: String,
-		description: String = "",
-	): Faction? {
+	fun createFaction(id: String, name: String, description: String = ""): Faction? {
 		// Check if faction already exists
 		if (factions.containsKey(id.lowercase(Locale.getDefault()))) {
 			return null

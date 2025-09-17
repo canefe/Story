@@ -14,10 +14,7 @@ import org.bukkit.event.player.PlayerTeleportEvent
 class DisguiseUtil(
 	private val plugin: Story,
 ) {
-	fun disguisePlayer(
-		player: Player,
-		npc: NPC,
-	) {
+	fun disguisePlayer(player: Player, npc: NPC) {
 		if (npc != null) {
 			val skin = npc.getOrAddTrait(SkinTrait::class.java)
 			val texture = skin.texture

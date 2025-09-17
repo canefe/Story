@@ -158,11 +158,7 @@ class TimeService(private val plugin: Story) {
 	 * @param currentPower Current memory power
 	 * @return The decayed strength value between 0.0 and 1.0
 	 */
-	fun calculateMemoryDecay(
-		createdAt: Long,
-		decayRate: Double,
-		currentPower: Double,
-	): Double {
+	fun calculateMemoryDecay(createdAt: Long, decayRate: Double, currentPower: Double): Double {
 		val currentTime = getCurrentGameTime()
 		val timeElapsed = currentTime - createdAt
 		val timeUnits = timeElapsed.toDouble()

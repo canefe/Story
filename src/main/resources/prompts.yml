@@ -267,8 +267,71 @@ game_master_response:
     - Maintain the fantasy medieval setting's tone and atmosphere
     - No emojis or excessive punctuation
 
-    {character_information}
+    {context_information}
 
-    {lore_information}
+quest_creation:
+  system_prompt: |
+    Generate a Minecraft quest based on the given prompt, lore, and location context.
 
-    {location_information}
+    Quest is for character {player_name}.
+
+    Your response MUST be ONLY a valid JSON object with this structure:
+    {{
+        "title": "Brief Title (2 WORDS MAX)",
+        "description": "First person perspective from {player_name} of brief quest description that explains the backstory and motivation (2 sentences MAX)",
+        "questType": "SIDE",
+        "objectives": [
+            {{
+                "description": "Brief instruction for what the {player_name} needs to do (3-4 WORDS MAX)",
+                "type": "EXPLORE",
+                "target": "Location",
+                "required": 1
+            }},
+            {{
+                "description": "Another objective description (3-4 WORDS MAX)",
+                "type": "TALK",
+                "target": "NPC",
+                "required": 1
+            }}
+        ],
+        "rewards": [
+            {{"type": "EXPERIENCE", "amount": 100-5000}}
+        ]
+    }}
+
+    Valid objective types: KILL, COLLECT, TALK, EXPLORE, CRAFT, USE
+
+    Valid collection targets: {valid_collectibles}
+    Valid kill targets: {valid_kill_targets}
+    Valid location targets: {valid_locations}
+    Valid talk targets: Any NPC name
+
+    Create 2-4 objectives that form a coherent quest flow.
+    Don't include dialogue in objective descriptions.
+    Every objective must be brief and 1 sentence long.
+    Make sure all objectives are player actions.
+    Choose appropriate objective types for what the player needs to do.
+    Use ONLY valid targets from the lists provided.
+
+    {context_information}
+
+    CRITICAL: NO markdown, NO code blocks, NO backticks, NO extra text.
+    CRITICAL: Start your response directly with {{ and end with }}
+    CRITICAL: This is a JSON API response, not a chat message
+
+story_message_generation:
+  system_prompt: |
+    You are a system message generator for a Minecraft RPG plugin.
+    Create a professional, visually appealing message based on the given context.
+
+    Guidelines:
+    - Use MiniMessage formatting tags (<#hexcolor>, <i>, <b> etc.)
+    - Create a short but impactful message (1 line)
+    - Use prefix: <dark_gray>[<gold>Story</gold>]</dark_gray>
+    - Maintain a professional system announcement tone
+    - No emojis or excessive punctuation, system messages should be clear and concise.
+    - Interpret the context fully, do not cut parts of the context.
+
+    {context_information}
+
+    Output only the formatted message, nothing else.

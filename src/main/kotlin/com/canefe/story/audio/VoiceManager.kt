@@ -220,7 +220,6 @@ class VoiceManager(private val plugin: Story) {
 		}
 
 		// Return null if no custom voice is set - this will skip voice generation
-		plugin.logger.info("No custom voice set for NPC ${npc.name}, skipping voice generation")
 		return null
 	}
 

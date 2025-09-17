@@ -17,10 +17,7 @@ class ConvCommandUtils {
 	val npcManager: NPCManager get() = Story.instance.npcManager
 
 	// Return the GroupConversation if it exists, null otherwise
-	fun getConversation(
-		conversationId: Int,
-		sender: CommandSender,
-	): Conversation? {
+	fun getConversation(conversationId: Int, sender: CommandSender): Conversation? {
 		val conversation = story.conversationManager.getConversationById(conversationId)
 
 		if (conversation == null) {
@@ -31,23 +28,15 @@ class ConvCommandUtils {
 	}
 
 	// Return the list of conversation IDs
-	fun getConversationIDs(): List<Int> =
-		conversationManager
-			.getAllActiveConversations()
-			.map { it.id }
+	fun getConversationIDs(): List<Int> = conversationManager
+		.getAllActiveConversations()
+		.map { it.id }
 
-	fun createButton(
-		label: String,
-		color: String,
-		clickAction: String,
-		command: String,
-		hoverText: String,
-	): Component = CommandComponentUtils.createButton(mm, label, color, clickAction, command, hoverText)
+	fun createButton(label: String, color: String, clickAction: String, command: String, hoverText: String): Component =
+		CommandComponentUtils.createButton(mm, label, color, clickAction, command, hoverText)
 
-	fun combineComponentsWithSeparator(
-		components: List<Component>,
-		separatorText: String,
-	): Component = CommandComponentUtils.combineComponentsWithSeparator(mm, components, separatorText)
+	fun combineComponentsWithSeparator(components: List<Component>, separatorText: String): Component =
+		CommandComponentUtils.combineComponentsWithSeparator(mm, components, separatorText)
 
 	fun escapeForCommand(text: String): String = CommandComponentUtils.escapeForCommand(text)
 }

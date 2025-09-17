@@ -440,26 +440,26 @@ class AIDungeonMaster(private val plugin: Story) : Listener {
 
 		// Create system prompt
 		val systemPrompt = """
-            You are an AI Dungeon Master generating immersive events for a Minecraft RPG server.
+		You are an AI Dungeon Master generating immersive events for a Minecraft RPG server.
 
-            Generate a realistic, immersive event description that fits the medieval fantasy setting.
-            For significant events: Create dramatic, impactful descriptions that feel important.
-            For ambient events: Create subtle, atmospheric descriptions that add flavor.
+		Generate a realistic, immersive event description that fits the medieval fantasy setting.
+		For significant events: Create dramatic, impactful descriptions that feel important.
+		For ambient events: Create subtle, atmospheric descriptions that add flavor.
 
-            Respond in strict JSON format:
-            {
-                "description": "Your detailed event description that will be shown to players",
-                "commands": ["command1", "command2"],
-                "soundEffect": {"sound": "minecraft:ambient.cave", "volume": 1.0, "pitch": 1.0}
-            }
+		Respond in strict JSON format:
+		{
+		    "description": "Your detailed event description that will be shown to players",
+		    "commands": ["command1", "command2"],
+		    "soundEffect": {"sound": "minecraft:ambient.cave", "volume": 1.0, "pitch": 1.0}
+		}
 
-            Available commands:
-            - "weather thunder" - Changes weather to thunder
-            - "time set <time>" - Sets world time
-            - "playsound <sound> <player> <location> <volume> <pitch>"
+		Available commands:
+		- "weather thunder" - Changes weather to thunder
+		- "time set <time>" - Sets world time
+		- "playsound <sound> <player> <location> <volume> <pitch>"
 
-            Keep descriptions concise (1-3 sentences) and immersive.
-            ${if (isSignificant) "This is a SIGNIFICANT event - make it dramatic and memorable!" else ""}
+		Keep descriptions concise (1-3 sentences) and immersive.
+		${if (isSignificant) "This is a SIGNIFICANT event - make it dramatic and memorable!" else ""}
 		""".trimIndent()
 
 		val promptWithContext = "CONTEXT: $context\n\nEVENT REQUEST: $prompt"
@@ -532,19 +532,19 @@ class AIDungeonMaster(private val plugin: Story) : Listener {
 		val result = CompletableFuture<String?>()
 
 		val systemPrompt = """
-            You are a master storyteller helping to guide the narrative of a Minecraft RPG server.
-            Analyze the current state of the story and the context provided.
+		You are a master storyteller helping to guide the narrative of a Minecraft RPG server.
+		Analyze the current state of the story and the context provided.
 
-            If you believe the narrative should advance to a new chapter, respond with:
-            YES
-            NEW CHAPTER: [name of the new chapter]
-            EVENT: [description of the major event that marks this transition]
+		If you believe the narrative should advance to a new chapter, respond with:
+		YES
+		NEW CHAPTER: [name of the new chapter]
+		EVENT: [description of the major event that marks this transition]
 
-            If you believe the narrative should continue in the current chapter, respond with:
-            NO
-            REASON: [brief explanation of why the story should continue in its current chapter]
+		If you believe the narrative should continue in the current chapter, respond with:
+		NO
+		REASON: [brief explanation of why the story should continue in its current chapter]
 
-            Consider pacing, player engagement, and dramatic structure in your recommendation.
+		Consider pacing, player engagement, and dramatic structure in your recommendation.
 		""".trimIndent()
 
 		val messages = mutableListOf(
@@ -991,20 +991,20 @@ class AIDungeonMaster(private val plugin: Story) : Listener {
 				val context = buildDMQuestionContext(player, question)
 
 				val systemPrompt = """
-                    You are an immersive, knowledgeable Game Master for a medieval fantasy RPG set in Minecraft.
+				You are an immersive, knowledgeable Game Master for a medieval fantasy RPG set in Minecraft.
 
-                    Answer the player's question in-character as a wise, omniscient narrator who knows everything about the game world.
+				Answer the player's question in-character as a wise, omniscient narrator who knows everything about the game world.
 
-                    When responding:
-                    - Use detailed, vivid language appropriate to the medieval fantasy setting
-                    - Reference relevant lore, NPCs, and locations mentioned in the context
-                    - Use MiniMessage formatting for better readability (<gold>, <italic>, etc.)
-                    - Format important names and places with <yellow> tags
-                    - Break longer responses into paragraphs for readability
-                    - Stay in-character as a Game Master - no references to AI, servers, etc.
-                    - If you truly don't know something, weave a mysterious answer rather than admitting ignorance
+				When responding:
+				- Use detailed, vivid language appropriate to the medieval fantasy setting
+				- Reference relevant lore, NPCs, and locations mentioned in the context
+				- Use MiniMessage formatting for better readability (<gold>, <italic>, etc.)
+				- Format important names and places with <yellow> tags
+				- Break longer responses into paragraphs for readability
+				- Stay in-character as a Game Master - no references to AI, servers, etc.
+				- If you truly don't know something, weave a mysterious answer rather than admitting ignorance
 
-                    Maximum response length: 300 words
+				Maximum response length: 300 words
 				""".trimIndent()
 
 				val messages = mutableListOf(

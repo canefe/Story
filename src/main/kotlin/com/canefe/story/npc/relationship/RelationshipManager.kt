@@ -412,17 +412,17 @@ class RelationshipManager(private val plugin: Story) {
 		val allEntities = (allNpcs + allPlayers).joinToString("\n")
 
 		val prompt = """
-        You are a character detection system. Given a text and a list of known character,
-        identify which character are mentioned in the text. Return ONLY a JSON array of
-        character names that are mentioned.
+		You are a character detection system. Given a text and a list of known character,
+		identify which character are mentioned in the text. Return ONLY a JSON array of
+		character names that are mentioned.
 
-        Text: $content
+		Text: $content
 
-        Known characters:
-        $allEntities
+		Known characters:
+		$allEntities
 
-        Format your response as a valid JSON array: ["Character1", "Character2"]
-        IMPORTANT: Only include characters that are explicitly mentioned in the text.
+		Format your response as a valid JSON array: ["Character1", "Character2"]
+		IMPORTANT: Only include characters that are explicitly mentioned in the text.
 		""".trimIndent()
 
 		val messages = listOf(ConversationMessage("system", prompt))

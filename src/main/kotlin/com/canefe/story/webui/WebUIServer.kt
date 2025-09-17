@@ -106,10 +106,7 @@ class WebUIServer(
 		}
 	}
 
-	private fun handlePostPluginState(
-		session: IHTTPSession,
-		headers: Map<String, String>,
-	): Response {
+	private fun handlePostPluginState(session: IHTTPSession, headers: Map<String, String>): Response {
 		try {
 			// Parse the request body
 			val bodySize = session.headers["content-length"]?.toInt() ?: 0

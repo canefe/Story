@@ -138,6 +138,21 @@ tasks.withType<KotlinJvmCompile>().configureEach {
 
 tasks.test {
 	useJUnitPlatform()
+
+	// Configure test logging
+	testLogging {
+		events("passed", "skipped", "failed")
+		showStandardStreams = true
+		showExceptions = true
+		showCauses = true
+		showStackTraces = true
+	}
+
+	// Set JVM arguments for testing
+	jvmArgs("-Xmx2G", "-XX:+UseG1GC")
+
+	// Enable parallel test execution
+	maxParallelForks = Runtime.getRuntime().availableProcessors().div(2).coerceAtLeast(1)
 }
 
 tasks.withType<ShadowJar> {
@@ -171,36 +186,36 @@ tasks.register<Copy>("copyToServer") {
 	dependsOn("build")
 	dependsOn("shadowJar")
 
-	doFirst {
-		requireNotNull(serverPluginsDir) {
-			"❌ SERVER_PLUGINS_DIR is not set. Set it as an environment variable."
-		}
-	}
-
 	val shadowJar = tasks.named<Jar>("shadowJar").get()
-	from(shadowJar.archiveFile.get().asFile)
-	into(serverPluginsDir!!)
+	from(shadowJar.archiveFile)
+
+	// resolve env var once, during configuration
+	val dir = "/Users/canefe/test-server/plugins"
+
+	into(dir)
 
 	doLast {
-		println("✅ Copied fat plugin JAR to: $serverPluginsDir")
+		println("✅ Copied fat plugin JAR to: $dir")
 	}
 }
-tasks.register<Copy>("copyToProdServer") {
+
+tasks.register<Exec>("deployToSSH") {
 	dependsOn("build")
 	dependsOn("shadowJar")
 
-	doFirst {
-		requireNotNull(prodServerPluginsDir) {
-			"❌ PROD_SERVER_PLUGINS_DIR is not set. Set it as an environment variable."
-		}
-	}
+	group = "deployment"
+	description = "Deploy the plugin JAR to remote server via SSH"
 
 	val shadowJar = tasks.named<Jar>("shadowJar").get()
-	from(shadowJar.archiveFile.get().asFile)
-	into(prodServerPluginsDir!!)
+	val localFile = shadowJar.archiveFile.get().asFile.absolutePath
+	val remoteUser = "ozgur"
+	val remoteHost = "192.168.1.34"
+	val remotePath = "~/minecraft/data/plugins/Story-0.1.0-SNAPSHOT.jar"
+
+	commandLine("scp", localFile, "$remoteUser@$remoteHost:$remotePath")
 
 	doLast {
-		println("✅ Copied fat plugin JAR to: $prodServerPluginsDir")
+		println("✅ Deployed plugin JAR to $remoteUser@$remoteHost:$remotePath")
 	}
 }
 

@@ -66,12 +66,7 @@ class AudioManager(
 	 * @param volume The volume of the sound (default 1.0)
 	 * @param pitch The pitch of the sound (default 1.0)
 	 */
-	fun playRandomVoiceToPlayer(
-		player: Player,
-		gender: String = "man",
-		volume: Float = 1.0f,
-		pitch: Float = 1.0f,
-	) {
+	fun playRandomVoiceToPlayer(player: Player, gender: String = "man", volume: Float = 1.0f, pitch: Float = 1.0f) {
 		val voiceNumber = Random.nextInt(1, maxVoiceFiles + 1).toString().padStart(2, '0')
 		val soundId = "$soundNamespace.${gender}_$voiceNumber"
 
@@ -91,12 +86,7 @@ class AudioManager(
 	 * @param volume The volume of the sound (default 1.0)
 	 * @param pitch The pitch of the sound (default 1.0)
 	 */
-	fun playSpecificVoice(
-		location: Location,
-		soundName: String,
-		volume: Float = 1.0f,
-		pitch: Float = 1.0f,
-	) {
+	fun playSpecificVoice(location: Location, soundName: String, volume: Float = 1.0f, pitch: Float = 1.0f) {
 		val soundId = "$soundNamespace.$soundName"
 		plugin.server.scheduler.runTask(
 			plugin,

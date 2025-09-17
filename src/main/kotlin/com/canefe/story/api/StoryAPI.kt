@@ -4,10 +4,9 @@ import com.canefe.story.Story
 import com.canefe.story.character.data.CharacterData
 import com.canefe.story.conversation.ConversationMessage
 import org.bukkit.entity.Player
+import java.util.concurrent.CompletableFuture
 
-/**
- * Public API for the Story plugin
- */
+/** Public API for the Story plugin */
 interface StoryAPI {
 	companion object {
 		private lateinit var instance: Story
@@ -78,8 +77,9 @@ interface StoryAPI {
 		 * @return List of skill names or empty list if no skills found
 		 */
 		@JvmStatic
-		fun getCharacterSkills(player: Player): List<String> =
-			instance.skillManager.createProviderForCharacter(player.uniqueId, true).getAllSkills()
+		fun getCharacterSkills(player: Player): List<String> = instance.skillManager
+			.createProviderForCharacter(player.uniqueId, true)
+			.getAllSkills()
 
 		/**
 		 * Get a Character's skill level
@@ -104,15 +104,18 @@ interface StoryAPI {
 		 */
 		@JvmStatic
 		fun getCharacterData(player: Player): CharacterData? {
-			val char = CharacterData(
-				id = player.uniqueId,
-				name = player.name,
-				role = "default",
-				storyLocation = null,
-				context = "null",
-			)
+			val char =
+				CharacterData(
+					id = player.uniqueId,
+					name = player.name,
+					role = "default",
+					storyLocation = null,
+					context = "null",
+				)
 			char.isPlayer = true
-			char.setSkillProvider(instance.skillManager.createProviderForCharacter(player.uniqueId, true))
+			char.setSkillProvider(
+				instance.skillManager.createProviderForCharacter(player.uniqueId, true),
+			)
 			return char
 		}
 
@@ -130,12 +133,33 @@ interface StoryAPI {
 				appearance = npcData.appearance,
 			)
 		}
+
+		/**
+		 * Ask LLM to generate a response to a context (asynchronous)
+		 *
+		 * @param context The context to generate a response to
+		 * @return CompletableFuture with the response as a string
+		 */
+		@JvmStatic
+		fun generateResponseAsync(context: String): CompletableFuture<String> {
+			val messages = mutableListOf<ConversationMessage>()
+			// Use ContextExtractor to extract context
+			val contextExtractor = instance.contextExtractor
+			val extractedContext = contextExtractor.extractContext(context)
+			// Use PromptService to get the response generation prompt
+			val responsePrompt = extractedContext.generatePromptContext()
+			messages.add(ConversationMessage("system", responsePrompt))
+			messages.add(ConversationMessage("user", context))
+
+			// Use getAIResponse to generate the response
+			return instance.getAIResponse(messages, lowCost = true).thenApply { response ->
+				response?.trim() ?: ""
+			}
+		}
 	}
 }
 
-/**
- * API representation of a conversation that's exposed to other plugins
- */
+/** API representation of a conversation that's exposed to other plugins */
 class APIConversation(
 	val id: Int,
 	val players: List<Player>,
@@ -144,7 +168,5 @@ class APIConversation(
 	val history: List<ConversationMessage> = emptyList(),
 )
 
-/**
- * API representation of NPC data that's exposed to other plugins
- */
+/** API representation of NPC data that's exposed to other plugins */
 class APINPCData(val name: String, val context: String, val appearance: String)

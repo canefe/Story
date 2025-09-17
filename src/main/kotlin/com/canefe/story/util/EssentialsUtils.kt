@@ -89,10 +89,7 @@ object EssentialsUtils {
 		return getUserYaml(player)?.getString("ipAddress")!!
 	}
 
-	fun getHomeLocation(
-		player: String,
-		home: String,
-	): Location? {
+	fun getHomeLocation(player: String, home: String): Location? {
 		val userYaml = getUserYaml(player)
 		if (userYaml?.getConfigurationSection("homes") == null) {
 			return null
@@ -112,10 +109,7 @@ object EssentialsUtils {
 		return getLocation(warpYML, "")
 	}
 
-	private fun getLocation(
-		yaml: YamlConfiguration,
-		header: String,
-	): Location {
+	private fun getLocation(yaml: YamlConfiguration, header: String): Location {
 		val world = Story.instance.server.getWorld(yaml.getString(header + "world")!!)
 		val yaw = yaml.getDouble(header + "yaw")
 		val pitch = yaml.getDouble(header + "pitch")

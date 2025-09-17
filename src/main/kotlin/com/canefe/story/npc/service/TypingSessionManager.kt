@@ -1,6 +1,7 @@
 package com.canefe.story.npc.service
 
 import com.canefe.story.Story
+import com.canefe.story.npc.data.NPCContext
 import com.canefe.story.util.PluginUtils
 import eu.decentsoftware.holograms.api.DHAPI
 import net.citizensnpcs.api.npc.NPC
@@ -29,6 +30,7 @@ class TypingSessionManager(
 	 */
 	inner class TypingSession(
 		val npc: NPC,
+		val npcContext: NPCContext?,
 		val fullText: String,
 		val typingSpeed: Int = 4, // Characters per tick
 		val location: Location = npc.entity.location,
@@ -78,6 +80,7 @@ class TypingSessionManager(
 	 */
 	fun startTyping(
 		npc: NPC,
+		npcContext: NPCContext?,
 		fullText: String,
 		messageFormat: String = "<npc_text>",
 		typingSpeed: Int = 2,
@@ -101,12 +104,17 @@ class TypingSessionManager(
 
 		if (location == null) {
 			plugin.logger.warning("NPC location is null, cannot start typing session.")
-			return TypingSession(npc, fullText)
+			return TypingSession(
+				npc,
+				fullText = fullText,
+				npcContext = npcContext,
+			)
 		}
 
 		val session =
 			TypingSession(
 				npc = npc,
+				npcContext = npcContext,
 				fullText = fullText,
 				typingSpeed = typingSpeed,
 				location = location,

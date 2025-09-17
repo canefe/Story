@@ -7,7 +7,6 @@ import dev.jorel.commandapi.arguments.DoubleArgument
 import dev.jorel.commandapi.executors.PlayerCommandExecutor
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
-import net.kyori.adventure.text.format.TextDecoration
 
 class FindLocationCommand(private val commandUtils: LocationCommandUtils) {
 	fun getCommand(): CommandAPICommand {

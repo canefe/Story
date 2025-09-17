@@ -28,10 +28,7 @@ class DisguiseManager(
 	/**
 	 * Register a player as disguised as a specific NPC
 	 */
-	fun registerDisguise(
-		player: Player,
-		npc: NPC,
-	) {
+	fun registerDisguise(player: Player, npc: NPC) {
 		disguisedPlayers[player.uniqueId] = npc.uniqueId
 	}
 

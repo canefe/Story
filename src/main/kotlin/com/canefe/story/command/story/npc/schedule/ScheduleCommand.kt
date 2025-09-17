@@ -15,13 +15,12 @@ import java.io.File
 class ScheduleCommand(
 	private val commandUtils: ScheduleCommandUtils,
 ) {
-	fun getCommand(): CommandAPICommand =
-		CommandAPICommand("schedule")
-			.withPermission("story.location")
-			.withSubcommand(getCreateScheduleCommand())
-			.withSubcommand(getSetScheduleCommand())
-			.withSubcommand(getEnableDisableCommands()[0]) // Add disable command
-			.withSubcommand(getEnableDisableCommands()[1]) // Add enable command
+	fun getCommand(): CommandAPICommand = CommandAPICommand("schedule")
+		.withPermission("story.location")
+		.withSubcommand(getCreateScheduleCommand())
+		.withSubcommand(getSetScheduleCommand())
+		.withSubcommand(getEnableDisableCommands()[0]) // Add disable command
+		.withSubcommand(getEnableDisableCommands()[1]) // Add enable command
 
 	private fun getCreateScheduleCommand(): CommandAPICommand {
 		return CommandAPICommand("create")
