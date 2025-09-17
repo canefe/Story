@@ -52,6 +52,13 @@ class SessionManager private constructor(
         currentSessionFile = File(sessionFolder, "session-$timestamp.yml")
         saveSessionToFile(session, currentSessionFile!!)
 
+        // Let's add all currently online players to the session by default
+        plugin.server.onlinePlayers.forEach { player ->
+            session.players.add(player.name)
+        }
+        // Save changes immediately
+        autosaveCurrentSession()
+
         plugin.logger.info("Started new session: ${currentSessionFile!!.name}")
     }
 
