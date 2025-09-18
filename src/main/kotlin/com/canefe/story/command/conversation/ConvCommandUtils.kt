@@ -1,9 +1,9 @@
 package com.canefe.story.command.conversation
 
-import ConversationManager
 import com.canefe.story.Story
 import com.canefe.story.command.base.CommandComponentUtils
 import com.canefe.story.conversation.Conversation
+import com.canefe.story.conversation.ConversationManager
 import com.canefe.story.player.NPCManager
 import com.canefe.story.util.Msg.sendError
 import net.kyori.adventure.text.Component
