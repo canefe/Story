@@ -20,7 +20,7 @@ plugins {
 }
 
 group = "com.canefe"
-version = "0.1.0-SNAPSHOT"
+version = "0.2.0"
 
 repositories {
     mavenCentral()
@@ -281,7 +281,7 @@ tasks.register<Exec>("deployToSSH") {
             .asFile.absolutePath
     val remoteUser = "ozgur"
     val remoteHost = "192.168.1.34"
-    val remotePath = "~/minecraft/data/plugins/Story-0.1.0-SNAPSHOT.jar"
+    val remotePath = "~/minecraft/data/plugins/Story-0.2.0.jar"
 
     commandLine("scp", localFile, "$remoteUser@$remoteHost:$remotePath")
 
