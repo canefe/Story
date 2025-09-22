@@ -348,7 +348,7 @@ class MythicMobConversationIntegration(
         // Trait management for Citizens API compatibility
         @Suppress("UNCHECKED_CAST")
         override fun <T : Trait> getTrait(trait: Class<T>): T? {
-            if (trait.name == "net.citizensnpcs.api.trait.trait.RotationTrait") {
+            if (trait.name == "net.citizensnpcs.trait.RotationTrait") {
                 if (!traits.containsKey(trait)) {
                     traits[trait as Class<out Trait>] = RotationTrait()
                 }
@@ -366,16 +366,17 @@ class MythicMobConversationIntegration(
         @Suppress("UNCHECKED_CAST")
         override fun <T : Trait> getOrAddTrait(trait: Class<T>): T =
             getTrait(trait) ?: when {
-                trait.name == "net.citizensnpcs.api.trait.trait.RotationTrait" -> {
+                trait.name == "net.citizensnpcs.trait.RotationTrait" -> {
                     val rotTrait = RotationTrait() as T
                     traits[trait as Class<out Trait>] = rotTrait
                     rotTrait
                 }
+
                 else -> throw UnsupportedOperationException("Cannot add trait $trait to MythicMob")
             }
 
         override fun hasTrait(trait: Class<out Trait>): Boolean =
-            trait.name == "net.citizensnpcs.api.trait.trait.RotationTrait" || traits.containsKey(trait)
+            trait.name == "net.citizensnpcs.trait.RotationTrait" || traits.containsKey(trait)
 
         // Set conversation for tracking
         fun setConversation(conversation: Conversation?) {
@@ -486,7 +487,8 @@ class MythicMobConversationIntegration(
         override fun teleport(
             location: Location,
             cause: PlayerTeleportEvent.TeleportCause,
-        ) {}
+        ) {
+        }
 
         override fun useMinecraftAI() = false
 
