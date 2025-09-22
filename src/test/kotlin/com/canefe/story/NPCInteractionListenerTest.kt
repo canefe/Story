@@ -16,12 +16,11 @@ import net.kyori.adventure.chat.SignedMessage
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
 import org.bukkit.entity.Player
-import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.Assertions
-import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.*
 import org.mockbukkit.mockbukkit.MockBukkit
 import org.mockbukkit.mockbukkit.ServerMock
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class NPCInteractionListenerTest {
     private lateinit var server: ServerMock
@@ -187,6 +186,16 @@ class NPCInteractionListenerTest {
 
     @Test
     fun `player is nearby to another player in conversation - joins that conversation`() {
+        // Clear all existing conversations
+        plugin.conversationManager.activeConversations.forEach { convo ->
+            plugin.conversationManager.endConversation(convo, true)
+        }
+
+        // 1) Freeze background proximity checks (eliminate races)
+        val cm = spyk(plugin.conversationManager)
+        every { cm.scheduleProximityCheck(any()) } returns Unit
+        plugin.conversationManager = cm
+
         val alice = server.addPlayer("Alice")
         val bob = server.addPlayer("Bob")
         val guard = makeNpc("Guard")
@@ -256,23 +265,29 @@ class NPCInteractionListenerTest {
         server.scheduler.performOneTick()
 
         // Assert: Alice ended up in the existing convo (not a new one)
-        waitUntil(server, 1000) {
-            val convo = plugin.conversationManager.getConversation(alice)
-            convo != null &&
-                convo == existingConversation &&
-                convo.players.contains(alice.uniqueId) &&
-                plugin.conversationManager.activeConversations.size == 1
-        }
-        Assertions.assertEquals(1, plugin.conversationManager.activeConversations.size)
-
-        // Process scheduled sync task from onPlayerChat
-        server.scheduler.performTicks(1)
-
+        waitUntil(server, 400) { plugin.conversationManager.getConversation(alice) != null }
         val convo = plugin.conversationManager.getConversation(alice)
-        Assertions.assertNotNull(convo)
+        assertNotNull(convo, "Alice never got a conversation")
+
+        assertEquals(1, plugin.conversationManager.activeConversations.size, dumpConvos())
+
+        assertTrue(convo.players.contains(alice.uniqueId), dumpConvos())
+
         Assertions.assertEquals(existingConversation, convo)
-        Assertions.assertTrue(convo!!.players.contains(alice.uniqueId))
+        Assertions.assertTrue(convo.players.contains(alice.uniqueId))
     }
+
+    private fun dumpConvos(): String =
+        plugin.conversationManager.activeConversations.joinToString(
+            prefix = "\nActive conversations:\n",
+            separator = "\n",
+        ) { c ->
+            "players=${c.players.map {
+                it.toString().take(
+                    8,
+                )
+            }}, npcs=${c.npcs.map { it.name }} id=${System.identityHashCode(c)}"
+        }
 
     // Two players and 1 npcs in one conversation.
     // One player goes away and talks to another npc - starts a new conversation, should not be in the previous one.

@@ -192,6 +192,14 @@ tasks.test {
             .div(2)
             .coerceAtLeast(1)
 
+    testLogging {
+        events("passed", "skipped", "failed")
+        showStandardStreams = true
+        showExceptions = true
+        showCauses = true
+        showStackTraces = true
+    }
+
     // Inject API key into test environment
     environment("OPENROUTER_API_KEY", openRouterAPIKey ?: "")
 
