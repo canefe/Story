@@ -254,8 +254,6 @@ class NPCInteractionListenerTest {
 
         // Process scheduled sync task from onPlayerChat
         server.scheduler.performOneTick()
-        server.scheduler.performOneTick()
-        server.scheduler.performTicks(100)
 
         // Assert: Alice ended up in the existing convo (not a new one)
         waitUntil(server, 200) {
