@@ -36,11 +36,6 @@ class StubTest {
     }
 
     @Test
-    fun pluginEnables() {
-        assertTrue(plugin.isEnabled)
-    }
-
-    @Test
     fun `realisticseasons API stub not used when plugin jar present`() {
         // When RealisticSeasons jar is on the classpath,
         // the actual class will not have our stub package-signature

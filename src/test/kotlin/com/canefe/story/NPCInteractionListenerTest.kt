@@ -4,6 +4,7 @@ import com.canefe.story.command.base.CommandManager
 import com.canefe.story.event.NPCInteractionListener
 import com.canefe.story.npc.util.NPCUtils
 import com.canefe.story.testutils.makeNpc
+import com.canefe.story.testutils.waitUntil
 import dev.jorel.commandapi.CommandAPI
 import io.mockk.*
 import io.papermc.paper.chat.ChatRenderer
@@ -356,6 +357,10 @@ class NPCInteractionListenerTest {
         server.pluginManager.callEvent(aliceEvent)
         server.scheduler.performTicks(1)
         // Assert: Alice ended up in a brand-new convo (not the existing one)
+        waitUntil(server, 200) {
+            plugin.conversationManager.getConversation(alice) != null &&
+                plugin.conversationManager.getConversation(alice) != existingConversation
+        }
         Assertions.assertEquals(2, plugin.conversationManager.activeConversations.size)
         val newConvo = plugin.conversationManager.getConversation(alice)
         Assertions.assertNotNull(newConvo)
