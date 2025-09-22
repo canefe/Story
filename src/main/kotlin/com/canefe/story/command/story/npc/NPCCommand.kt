@@ -19,6 +19,7 @@ class NPCCommand(
     private val plugin: Story,
 ) {
     private val commandUtils = ScheduleCommandUtils()
+    private val npcUtils = plugin.npcUtils
 
     fun getCommand(): CommandAPICommand =
         CommandAPICommand("npc")
@@ -64,7 +65,7 @@ class NPCCommand(
                     var npcEntity: NPC? = null
 
                     if (sender is Player) {
-                        val nearbyNPCs = plugin.getNearbyNPCs(sender, 10.0)
+                        val nearbyNPCs = npcUtils.getNearbyNPCs(sender, 10.0)
                         npcEntity = nearbyNPCs.find { it.name == npcName }
                     }
                     if (npcEntity == null) {
@@ -133,7 +134,7 @@ class NPCCommand(
                     var npcEntity: NPC? = null
 
                     if (sender is Player) {
-                        val nearbyNPCs = plugin.getNearbyNPCs(sender, 10.0)
+                        val nearbyNPCs = npcUtils.getNearbyNPCs(sender, 10.0)
                         npcEntity = nearbyNPCs.find { it.name == npcName }
                     }
                     if (npcEntity == null) {

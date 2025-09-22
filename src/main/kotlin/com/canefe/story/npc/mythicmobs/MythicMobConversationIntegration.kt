@@ -181,7 +181,7 @@ class MythicMobConversationIntegration(
                 }
 
                 // check if there is any CitizensNPC nearby before starting a conversation
-                val nearbyCitizensNPCs = plugin.getNearbyNPCs(player, plugin.config.chatRadius)
+                val nearbyCitizensNPCs = plugin.npcUtils.getNearbyNPCs(player, plugin.config.chatRadius)
 
                 val existingConversation =
                     conversationManager.getConversation(npc) ?: run {

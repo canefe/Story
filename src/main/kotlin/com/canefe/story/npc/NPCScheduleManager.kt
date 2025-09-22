@@ -506,7 +506,7 @@ class NPCScheduleManager private constructor(
 
         for (player in plugin.server.onlinePlayers) {
             // Get NPCs near this player
-            val playerNearbyNPCs = plugin.getNearbyNPCs(player, checkRadius)
+            val playerNearbyNPCs = plugin.npcUtils.getNearbyNPCs(player, checkRadius)
             nearbyNPCs.addAll(playerNearbyNPCs)
         }
 
@@ -515,13 +515,13 @@ class NPCScheduleManager private constructor(
 
     private fun hasNearbyPlayers(npc: NPC): Boolean {
         val radius = plugin.config.rangeBeforeTeleport * 2
-        val nearbyPlayers = plugin.getNearbyPlayers(npc, radius, ignoreY = true)
+        val nearbyPlayers = plugin.npcUtils.getNearbyPlayers(npc, radius, ignoreY = true)
         return nearbyPlayers.isNotEmpty()
     }
 
     private fun hasNearbyPlayers(location: Location): Boolean {
         val radius = plugin.config.rangeBeforeTeleport * 5
-        val nearbyPlayers = plugin.getNearbyPlayers(location, radius, ignoreY = true)
+        val nearbyPlayers = plugin.npcUtils.getNearbyPlayers(location, radius, ignoreY = true)
         return nearbyPlayers.isNotEmpty()
     }
 
@@ -577,8 +577,10 @@ class NPCScheduleManager private constructor(
                     // Use the upmost parent's name to get sublocations
                     tempLocation?.let { plugin.locationManager.getSublocations(it.name) } ?: emptyList()
                 }
+
                 currentStoryLocation != null ->
                     plugin.locationManager.getSublocations(currentStoryLocation.name)
+
                 else ->
                     // If no location context, consider ALL sublocations - but prioritize nearby ones
                     plugin.locationManager
@@ -645,11 +647,13 @@ class NPCScheduleManager private constructor(
 
                 if (debugMessages) {
                     plugin.logger.info(
-                        "SYNC: Currently eligible locations for ${npc.name}: ${currentlyEligibleLocations.joinToString(
-                            ", ",
-                        ) {
-                            it.name
-                        }}",
+                        "SYNC: Currently eligible locations for ${npc.name}: ${
+                            currentlyEligibleLocations.joinToString(
+                                ", ",
+                            ) {
+                                it.name
+                            }
+                        }",
                     )
                 }
 
@@ -1158,7 +1162,7 @@ class NPCScheduleManager private constructor(
     ) {
         val range = plugin.config.rangeBeforeTeleport
 
-        val nearbyPlayers = plugin.getNearbyPlayers(npc, range, ignoreY = true)
+        val nearbyPlayers = plugin.npcUtils.getNearbyPlayers(npc, range, ignoreY = true)
         var shouldTeleport = nearbyPlayers.isEmpty()
 
         val npcLocation = npc.entity?.location ?: npc.getOrAddTrait(CurrentLocation::class.java).location
@@ -1178,14 +1182,16 @@ class NPCScheduleManager private constructor(
 
         // If target location has players, do not teleport.
         if (shouldTeleport) {
-            val nearbyPlayersInTargetLocation = plugin.getNearbyPlayers(location, range, ignoreY = true)
+            val nearbyPlayersInTargetLocation = plugin.npcUtils.getNearbyPlayers(location, range, ignoreY = true)
             if (nearbyPlayersInTargetLocation.isNotEmpty()) {
                 shouldTeleport = false
                 if (debugMessages) {
                     plugin.logger.info(
-                        "Target location has nearby players: ${nearbyPlayersInTargetLocation.joinToString(
-                            ", ",
-                        ) { it.name }}, switching to walking",
+                        "Target location has nearby players: ${
+                            nearbyPlayersInTargetLocation.joinToString(
+                                ", ",
+                            ) { it.name }
+                        }, switching to walking",
                     )
                 }
             }
@@ -1266,10 +1272,12 @@ class NPCScheduleManager private constructor(
                     }
                 }
             }
+
             "work" -> {
                 // Make NPC perform work animation
                 sitTrait.setSitting(null) // Ensure NPC is not sitting
             }
+
             "sleep" -> {
                 // Make NPC sleep
                 entityPoseTrait.pose = EntityPoseTrait.EntityPose.SLEEPING
@@ -1282,11 +1290,13 @@ class NPCScheduleManager private constructor(
                     }
                 }
             }
+
             "idle" -> {
                 // Default idle behavior
                 entityPoseTrait.pose = EntityPoseTrait.EntityPose.STANDING
                 sitTrait.setSitting(null) // Ensure NPC is not sitting
             }
+
             else -> {
                 plugin.logger.warning("Unknown action: $action for NPC: ${npc.name}")
             }
@@ -1316,7 +1326,7 @@ class NPCScheduleManager private constructor(
             if (player.location.world == targetLocation.world &&
                 player.location.distance(targetLocation) <= proximityRadius * 2
             ) {
-                allNPCs.addAll(plugin.getNearbyNPCs(player, proximityRadius + 20.0))
+                allNPCs.addAll(plugin.npcUtils.getNearbyNPCs(player, proximityRadius))
             }
         }
 
@@ -1608,6 +1618,7 @@ class NPCScheduleManager private constructor(
                 "sleep" ->
                     occupyingNPC.getOrAddTrait(EntityPoseTrait::class.java).pose ==
                         EntityPoseTrait.EntityPose.SLEEPING
+
                 else -> true // For other actions, assume still valid
             }
 

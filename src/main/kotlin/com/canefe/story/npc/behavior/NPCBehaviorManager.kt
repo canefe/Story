@@ -271,7 +271,7 @@ class NPCBehaviorManager(
 
         for (player in Bukkit.getOnlinePlayers()) {
             // Get NPCs near this player
-            val playerNearbyNPCs = plugin.getNearbyNPCs(player, checkRadius)
+            val playerNearbyNPCs = plugin.npcUtils.getNearbyNPCs(player, checkRadius)
             nearbyNPCs.addAll(playerNearbyNPCs)
         }
 

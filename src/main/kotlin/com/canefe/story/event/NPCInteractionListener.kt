@@ -284,18 +284,17 @@ class NPCInteractionListener(
         return plugin.conversationManager.getConversation(playerCharacterName)
             ?: run {
                 // Create new conversation with nearby NPCs and players
-                var nearbyNPCs = plugin.getNearbyNPCs(player, chatRadius)
-                var players = plugin.getNearbyPlayers(player, chatRadius)
+                var nearbyNPCs = plugin.npcUtils.getNearbyNPCs(player, chatRadius)
+                var players = plugin.npcUtils.getNearbyPlayers(player, chatRadius)
 
                 // Remove players that have their chat disabled
                 players = players.filterNot { plugin.playerManager.isPlayerDisabled(it) }
 
                 // Check if any nearby NPCs are already in a conversation
                 val existingConversation =
-                    nearbyNPCs
-                        .mapNotNull {
-                            plugin.conversationManager.getConversation(it.name)
-                        }.firstOrNull()
+                    nearbyNPCs.firstNotNullOfOrNull {
+                        plugin.conversationManager.getConversation(it.name)
+                    }
 
                 // Check if any nearby players are already in a conversation
                 val playerConversation =
@@ -491,18 +490,18 @@ class NPCInteractionListener(
     }
 
     /** Data class to hold nearby entities */
-    private data class NearbyEntities(
+    data class NearbyEntities(
         val npcs: List<NPC>,
         val players: List<Player>,
         val allInteractableNPCs: List<NPC>,
     )
 
     /** Gathers all nearby entities for conversation processing */
-    private fun gatherNearbyEntities(
+    fun gatherNearbyEntities(
         player: Player,
         chatRadius: Double,
     ): NearbyEntities {
-        val nearbyNPCs = plugin.getNearbyNPCs(player, chatRadius)
+        val nearbyNPCs = plugin.npcUtils.getNearbyNPCs(player, chatRadius)
 
         val disguisedPlayers =
             player
@@ -675,8 +674,11 @@ class NPCInteractionListener(
     private fun tryStartNewConversation(
         player: Player,
         message: String?,
-        nearbyNPCs: List<NPC>,
+        nearbyEntities: NearbyEntities,
     ) {
+        val nearbyNPCs = nearbyEntities.allInteractableNPCs
+        val nearbyPlayers = nearbyEntities.players
+
         val availableNPCs = nearbyNPCs.filter { !plugin.npcManager.isNPCDisabled(it) }
 
         if (availableNPCs.isNotEmpty()) {

@@ -19,6 +19,7 @@ import com.canefe.story.information.WorldInformationManager
 import com.canefe.story.location.LocationManager
 import com.canefe.story.lore.LoreBookManager
 import com.canefe.story.npc.NPCContextGenerator
+import com.canefe.story.npc.NPCManager
 import com.canefe.story.npc.NPCScheduleManager
 import com.canefe.story.npc.behavior.NPCBehaviorManager
 import com.canefe.story.npc.data.NPCDataManager
@@ -31,7 +32,6 @@ import com.canefe.story.npc.service.NPCMessageService
 import com.canefe.story.npc.service.NPCResponseService
 import com.canefe.story.npc.service.TypingSessionManager
 import com.canefe.story.npc.util.NPCUtils
-import com.canefe.story.player.NPCManager
 import com.canefe.story.player.PlayerManager
 import com.canefe.story.quest.QuestListener
 import com.canefe.story.quest.QuestManager
@@ -45,19 +45,13 @@ import com.canefe.story.webui.WebUIServer
 import com.github.retrooper.packetevents.PacketEvents
 import com.github.retrooper.packetevents.event.PacketListenerPriority
 import dev.jorel.commandapi.CommandAPI
+import dev.jorel.commandapi.CommandAPIBukkitConfig
 import io.github.retrooper.packetevents.factory.spigot.SpigotPacketEventsBuilder
-import kr.toxicity.healthbar.api.placeholder.PlaceholderContainer
-import me.libraryaddict.disguise.DisguiseAPI
-import me.libraryaddict.disguise.disguisetypes.PlayerDisguise
-import net.citizensnpcs.api.CitizensAPI
-import net.citizensnpcs.api.npc.NPC
 import net.kyori.adventure.text.minimessage.MiniMessage
 import org.bukkit.Bukkit
-import org.bukkit.Location
 import org.bukkit.Material
 import org.bukkit.NamespacedKey
 import org.bukkit.command.CommandSender
-import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
 import org.bukkit.event.block.Action
@@ -65,8 +59,7 @@ import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.inventory.meta.BookMeta
 import org.bukkit.persistence.PersistentDataType
 import org.bukkit.plugin.java.JavaPlugin
-import java.util.Collections.emptyList
-import java.util.UUID
+import java.util.*
 import java.util.concurrent.CompletableFuture
 
 class Story :
@@ -117,7 +110,6 @@ class Story :
     lateinit var locationManager: LocationManager
         private set
     lateinit var npcUtils: NPCUtils
-        private set
     lateinit var npcManager: NPCManager
         private set
     lateinit var playerManager: PlayerManager
@@ -461,100 +453,6 @@ class Story :
 
             logger.info("Story plugin has been safely shut down.")
             null
-        }
-    }
-
-    // TODO: This method should be moved to a dedicated NPC service
-    fun getNearbyNPCs(
-        player: Player,
-        radius: Double,
-    ): List<NPC> =
-        CitizensAPI.getNPCRegistry().filter { npc ->
-            npc.isSpawned &&
-                npc.entity.location.world == player.location.world &&
-                npc.entity.location.distanceSquared(player.location) <= radius * radius
-        }
-
-    // TODO: This method should be moved to a dedicated NPC service
-    fun getNearbyNPCs(
-        npc: NPC,
-        radius: Double,
-    ): List<NPC> {
-        if (!npc.isSpawned) return emptyList()
-
-        return CitizensAPI.getNPCRegistry().filter { otherNpc ->
-            otherNpc.isSpawned &&
-                otherNpc != npc &&
-                otherNpc.entity.location.world == npc.entity.location.world &&
-                otherNpc.entity.location.distanceSquared(npc.entity.location) <= radius * radius
-        }
-    }
-
-    // TODO: This method should be moved to a dedicated Player service
-    fun getNearbyPlayers(
-        player: Player,
-        radius: Double,
-        ignoreY: Boolean = false,
-    ): List<Player> {
-        val radiusSquared = radius * radius
-        val playerLoc = player.location
-
-        return Bukkit.getOnlinePlayers().filter { otherPlayer ->
-            val loc = otherPlayer.location
-            if (loc.world != playerLoc.world) return@filter false
-
-            if (ignoreY) {
-                val dx = loc.x - playerLoc.x
-                val dz = loc.z - playerLoc.z
-                (dx * dx + dz * dz) <= radiusSquared
-            } else {
-                loc.distanceSquared(playerLoc) <= radiusSquared
-            }
-        }
-    }
-
-    fun getNearbyPlayers(
-        npc: NPC,
-        radius: Double,
-        ignoreY: Boolean = false,
-    ): List<Player> {
-        if (!npc.isSpawned) return emptyList()
-
-        val radiusSquared = radius * radius
-        val npcLoc = npc.entity.location
-
-        return Bukkit.getOnlinePlayers().filter { player ->
-            val loc = player.location
-            if (loc.world != npcLoc.world) return@filter false
-
-            if (ignoreY) {
-                val dx = loc.x - npcLoc.x
-                val dz = loc.z - npcLoc.z
-                (dx * dx + dz * dz) <= radiusSquared
-            } else {
-                loc.distanceSquared(npcLoc) <= radiusSquared
-            }
-        }
-    }
-
-    fun getNearbyPlayers(
-        location: Location,
-        radius: Double,
-        ignoreY: Boolean = false,
-    ): List<Player> {
-        val radiusSquared = radius * radius
-
-        return Bukkit.getOnlinePlayers().filter { player ->
-            val loc = player.location
-            if (loc.world != location.world) return@filter false
-
-            if (ignoreY) {
-                val dx = loc.x - location.x
-                val dz = loc.z - location.z
-                (dx * dx + dz * dz) <= radiusSquared
-            } else {
-                loc.distanceSquared(location) <= radiusSquared
-            }
         }
     }
 

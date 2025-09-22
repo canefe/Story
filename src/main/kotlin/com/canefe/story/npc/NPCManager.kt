@@ -1,4 +1,4 @@
-package com.canefe.story.player
+package com.canefe.story.npc
 
 import com.canefe.story.Story
 import com.canefe.story.conversation.Conversation
@@ -23,7 +23,6 @@ import java.io.File
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
-import kotlin.text.set
 
 class NPCManager private constructor(
     private val plugin: Story,
@@ -347,7 +346,7 @@ class NPCManager private constructor(
         npc: NPC,
         scale: Double,
     ): Boolean {
-        scaledNPCs [npc.uniqueId] = scale
+        scaledNPCs[npc.uniqueId] = scale
         saveData()
 
         val livingEntity: LivingEntity?

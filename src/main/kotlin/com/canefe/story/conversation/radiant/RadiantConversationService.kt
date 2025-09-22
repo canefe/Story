@@ -1,7 +1,7 @@
 package com.canefe.story.conversation.radiant
 
 import com.canefe.story.Story
-import com.canefe.story.player.NPCManager
+import com.canefe.story.npc.NPCManager
 import com.canefe.story.util.EssentialsUtils
 import net.citizensnpcs.api.npc.NPC
 import org.bukkit.Bukkit
@@ -49,7 +49,7 @@ class RadiantConversationService(
             return
         }
 
-        val nearbyNPCs = plugin.getNearbyNPCs(player, plugin.config.radiantRadius)
+        val nearbyNPCs = plugin.npcUtils.getNearbyNPCs(player, plugin.config.radiantRadius)
 
         // Try to find a non-cooldown NPC to initiate conversation
         for (npc in nearbyNPCs) {
@@ -90,7 +90,9 @@ class RadiantConversationService(
         }
 
         // Then check if there are other valid NPC targets
-        val nearbyNPCs = plugin.getNearbyNPCs(initiator, plugin.config.radiantRadius)
+        val nearbyNPCs =
+            plugin.npcUtils
+                .getNearbyNPCs(initiator, plugin.config.radiantRadius)
         val hasValidNPCTarget =
             nearbyNPCs.any { npc ->
                 !plugin.conversationManager.isInConversation(npc) &&
@@ -228,7 +230,9 @@ class RadiantConversationService(
      * Initiates a conversation between two NPCs
      */
     private fun initiateNPCConversation(initiator: NPC) {
-        val nearbyNPCs = plugin.getNearbyNPCs(initiator, plugin.config.radiantRadius)
+        val nearbyNPCs =
+            plugin.npcUtils
+                .getNearbyNPCs(initiator, plugin.config.radiantRadius)
 
         // Filter available NPCs
         val availableNPCs =

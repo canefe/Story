@@ -165,7 +165,7 @@ class DutyLoopRunner private constructor(
 
         // Check if step has distance requirement
         if (step.ifNear != null) {
-            val nearbyPlayers = plugin.getNearbyPlayers(npc, step.ifNear, ignoreY = true)
+            val nearbyPlayers = plugin.npcUtils.getNearbyPlayers(npc, step.ifNear, ignoreY = true)
             if (nearbyPlayers.isEmpty()) {
                 // Skip this step if no players nearby
                 return
@@ -286,7 +286,7 @@ class DutyLoopRunner private constructor(
         npc: NPC,
         range: Double,
     ) {
-        val nearbyPlayers = plugin.getNearbyPlayers(npc, range, ignoreY = true)
+        val nearbyPlayers = plugin.npcUtils.getNearbyPlayers(npc, range, ignoreY = true)
 
         if (nearbyPlayers.isNotEmpty()) {
             val nearestPlayer =
