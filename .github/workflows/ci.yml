@@ -113,6 +113,7 @@ jobs:
         id: get_version
         run: |
           VERSION=$(grep '^version:' src/main/resources/plugin.yml | awk '{print $2}')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
 
       - name: Update Dev Build Release
