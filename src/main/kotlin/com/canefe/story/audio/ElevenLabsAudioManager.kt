@@ -12,12 +12,15 @@ import org.bukkit.entity.Player
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
+import java.nio.file.Files
 import java.security.MessageDigest
 import java.util.*
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import javax.sound.sampled.AudioFileFormat
+import javax.sound.sampled.AudioFormat
 import javax.sound.sampled.AudioSystem
 
 /**
@@ -76,29 +79,12 @@ class ElevenLabsAudioManager(
     /** Initialize audio codecs for MP3 support */
     private fun initializeAudioCodecs() {
         try {
-            // Check if MP3 support is available by examining supported file types
-            val formats = AudioSystem.getAudioFileTypes()
-
-            // Try to register MP3 SPI manually if needed
+            // Just verify mp3spi is actually registered
             try {
                 Class.forName("javazoom.spi.mpeg.sampled.file.MpegAudioFileReader")
+                plugin.logger.info("MP3 SPI classes found, MP3 decoding should work")
             } catch (e: ClassNotFoundException) {
                 plugin.logger.warning("MP3 SPI classes not found - MP3 conversion may not work")
-            }
-
-            // Test if we can create a dummy MP3 input stream to verify MP3 support
-            try {
-                val testMp3Header =
-                    byteArrayOf(
-                        0xFF.toByte(),
-                        0xFB.toByte(),
-                        0x90.toByte(),
-                        0x00.toByte(), // MP3 header
-                    )
-                val testInputStream = ByteArrayInputStream(testMp3Header)
-                AudioSystem.getAudioInputStream(testInputStream)
-            } catch (e: Exception) {
-                plugin.logger.warning("MP3 decoding test failed: ${e.message}")
             }
         } catch (e: Exception) {
             plugin.logger.warning("Failed to initialize audio codecs: ${e.message}")
@@ -566,61 +552,42 @@ class ElevenLabsAudioManager(
         }
     }
 
-    /** Convert MP3 data to WAV format using FFmpeg */
     private fun convertMp3ToWav(mp3Data: ByteArray): ByteArray? {
-        return try {
-            // Create temporary files
-            val tempDir = File(plugin.dataFolder, "temp")
-            if (!tempDir.exists()) {
-                tempDir.mkdirs()
-            }
-
-            val tempMp3File = File(tempDir, "temp_${System.currentTimeMillis()}.mp3")
-            val tempWavFile = File(tempDir, "temp_${System.currentTimeMillis()}.wav")
-
-            try {
-                // Write MP3 data to temporary file
-                tempMp3File.writeBytes(mp3Data)
-
-                // Use ProcessBuilder to call ffmpeg
-                val processBuilder =
-                    ProcessBuilder(
-                        "ffmpeg",
-                        "-i",
-                        tempMp3File.absolutePath,
-                        "-acodec",
-                        "pcm_s16le",
-                        "-ar",
-                        "44100",
-                        "-y", // Overwrite output file if it exists
-                        tempWavFile.absolutePath,
+        val originalCl = Thread.currentThread().contextClassLoader
+        Thread.currentThread().contextClassLoader = this::class.java.classLoader
+        try {
+            val mp3Stream = AudioSystem.getAudioInputStream(ByteArrayInputStream(mp3Data))
+            mp3Stream.use { inStream ->
+                val src = inStream.format
+                val channels = maxOf(1, src.channels)
+                val target =
+                    AudioFormat(
+                        AudioFormat.Encoding.PCM_SIGNED,
+                        44100f, // resample to 44.1k
+                        16, // 16-bit
+                        channels, // preserve channel count (FFmpeg behavior)
+                        channels * 2, // frame size
+                        44100f,
+                        false, // little-endian
                     )
 
-                // Redirect error stream to avoid hanging
-                processBuilder.redirectErrorStream(true)
-
-                val process = processBuilder.start()
-                val exitCode = process.waitFor()
-
-                if (exitCode == 0 && tempWavFile.exists()) {
-                    plugin.logger.info("Successfully converted MP3 to WAV using FFmpeg")
-                    return tempWavFile.readBytes()
-                } else {
-                    plugin.logger.warning("FFmpeg conversion failed with exit code: $exitCode")
-                    return null
-                }
-            } finally {
-                // Clean up temporary files
-                if (tempMp3File.exists()) {
-                    tempMp3File.delete()
-                }
-                if (tempWavFile.exists()) {
-                    tempWavFile.delete()
+                val pcm = AudioSystem.getAudioInputStream(target, inStream)
+                pcm.use { pcmStream ->
+                    val tmp = Files.createTempFile("tts-", ".wav")
+                    try {
+                        // Use the File overload so the writer can finalize RIFF sizes
+                        AudioSystem.write(pcmStream, AudioFileFormat.Type.WAVE, tmp.toFile())
+                        return Files.readAllBytes(tmp)
+                    } finally {
+                        Files.deleteIfExists(tmp)
+                    }
                 }
             }
         } catch (e: Exception) {
-            plugin.logger.severe("Failed to convert MP3 to WAV using FFmpeg: ${e.message}")
-            null
+            plugin.logger.warning("MP3→WAV conversion failed: ${e.message}")
+            return null
+        } finally {
+            Thread.currentThread().contextClassLoader = originalCl
         }
     }
 
