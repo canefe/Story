@@ -112,8 +112,8 @@ jobs:
       - name: Read version from Gradle
         id: get_version
         run: |
-          VERSION=$(./gradlew properties -q | grep "^version:" | awk '{print $2}')
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          VERSION=$(grep '^version:' src/main/resources/plugin.yml | awk '{print $2}')
+
 
       - name: Update Dev Build Release
         uses: softprops/action-gh-release@v2

@@ -242,6 +242,10 @@ fun gitCommitHash(): String =
         "unknown"
     }
 
+tasks.jar {
+    enabled = false
+}
+
 tasks.withType<ShadowJar> {
     mergeServiceFiles {
         include("META-INF/services/javax.sound.sampled.spi.AudioFileReader")
