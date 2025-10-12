@@ -5,11 +5,11 @@ permissions:
 
 on:
   push:
-    branches: ["development"]   # run on commits to dev
+    branches: ["dev"]   # run on commits to dev
     tags:
       - 'v*'                    # trigger release on version tags
   pull_request:
-    branches: ["master","development"]  # run full suite on PRs
+    branches: ["main","dev"]  # run full suite on PRs
 
 jobs:
   build:
@@ -160,7 +160,7 @@ jobs:
   dev-release:
     needs: build
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/development'
+    if: github.ref == 'refs/heads/dev'
 
     steps:
       - uses: actions/checkout@v4
