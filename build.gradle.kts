@@ -42,7 +42,7 @@ plugins {
 }
 
 group = "com.canefe"
-version = "0.2.1"
+version = "0.2.2-SNAPSHOT"
 
 repositories {
     mavenCentral()
@@ -238,7 +238,7 @@ fun gitCommitHash(): String =
             standardOutput = stdout
         }
         stdout.toString().trim()
-    } catch (e: Exception) {
+    } catch (_: Exception) {
         "unknown"
     }
 
