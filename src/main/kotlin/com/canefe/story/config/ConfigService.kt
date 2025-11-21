@@ -125,7 +125,6 @@ class ConfigService(
             plugin.locationManager.loadAllLocations()
             plugin.questManager.loadConfig()
             plugin.npcMessageService.load()
-            plugin.factionManager.load()
             plugin.playerManager.load()
             plugin.npcManager.loadConfig()
             plugin.relationshipManager.load()

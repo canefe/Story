@@ -12,9 +12,7 @@ import com.canefe.story.context.ContextExtractor
 import com.canefe.story.conversation.ConversationManager
 import com.canefe.story.conversation.ConversationMessage
 import com.canefe.story.conversation.radiant.RadiantConversationService
-import com.canefe.story.dm.AIDungeonMaster
 import com.canefe.story.event.EventManager
-import com.canefe.story.faction.FactionManager
 import com.canefe.story.information.WorldInformationManager
 import com.canefe.story.location.LocationManager
 import com.canefe.story.lore.LoreBookManager
@@ -88,8 +86,6 @@ open class Story :
     // Services and managers
     lateinit var audioManager: AudioManager
 
-    lateinit var factionManager: FactionManager
-
     lateinit var disguiseManager: DisguiseManager
 
     lateinit var typingSessionManager: TypingSessionManager
@@ -136,8 +132,6 @@ open class Story :
     lateinit var relationshipManager: RelationshipManager
 
     lateinit var mythicMobConversation: MythicMobConversationIntegration
-
-    lateinit var aiDungeonMaster: AIDungeonMaster
 
     lateinit var skillManager: SkillManager
 
@@ -240,18 +234,12 @@ open class Story :
         // Initialize the prompt service early since other services depend on it
         promptService = PromptService(this)
 
-        // Initialize the time service
         timeService = TimeService(this)
-
         sessionManager = SessionManager.getInstance(this)
-
-        factionManager = FactionManager(this)
         disguiseManager = DisguiseManager(this)
         typingSessionManager = TypingSessionManager(this)
         contextExtractor = ContextExtractor(this)
-        // Initialize the audio
         audioManager = AudioManager(this)
-        // Initialize in order of dependencies
         npcContextGenerator = NPCContextGenerator(this)
         npcDataManager = NPCDataManager.getInstance(this)
         locationManager = LocationManager.getInstance(this)
@@ -260,18 +248,13 @@ open class Story :
         npcManager = NPCManager.getInstance(this)
         scheduleManager = NPCScheduleManager.getInstance(this)
         playerManager = PlayerManager.getInstance(this)
-        // Initialize services that depend on managers
         npcMessageService = NPCMessageService.getInstance(this)
         radiantConversationService = RadiantConversationService(this)
         npcResponseService = NPCResponseService(this)
         worldInformationManager = WorldInformationManager(this)
-
         npcActionIntentRecognizer = NPCActionIntentRecognizer(this)
-
         lorebookManager = LoreBookManager.getInstance(this)
-
         taskManager = TaskManager.getInstance(this)
-
         npcBehaviorManager = NPCBehaviorManager(this)
 
         conversationManager =
@@ -285,23 +268,15 @@ open class Story :
         eventManager = EventManager.getInstance(this)
         eventManager.registerEvents()
 
-        registerQuestBookListener()
-
         aiResponseService = AIResponseService(this)
-
         relationshipManager = RelationshipManager(this)
-
         mythicMobConversation = MythicMobConversationIntegration(this)
-
-        aiDungeonMaster = AIDungeonMaster(this)
-        // aiDungeonMaster.initialize()
-
         skillManager = SkillManager(this)
-
         voiceManager = VoiceManager(this)
-
         npcNameManager = NPCNameManager(this)
         npcNameResolver = NPCNameResolver(this)
+
+        registerQuestBookListener()
     }
 
     private fun registerQuestBookListener() {
@@ -372,9 +347,6 @@ open class Story :
 
             // NPC-related systems
             scheduleManager.shutdown()
-
-            // Data-related systems
-            factionManager.shutdown()
 
             // Generic systems
             CommandAPI.onDisable()
