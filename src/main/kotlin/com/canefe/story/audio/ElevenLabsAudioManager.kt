@@ -179,10 +179,11 @@ class ElevenLabsAudioManager(
         text: String,
         voiceId: String? = null,
         npcName: String = "unknown",
+        npcUuid: UUID? = null, // <--- NEW
     ): CompletableFuture<Boolean> =
         generateSpeechOnce(text, voiceId ?: getDefaultVoiceId(), npcName).thenApply { audioData ->
             if (audioData != null) {
-                sendAudioToPlayer(player, audioData)
+                sendAudioToPlayer(player, audioData, npcUuid) // <--- pass it through
                 true
             } else {
                 false
@@ -408,6 +409,7 @@ class ElevenLabsAudioManager(
     fun sendAudioToPlayer(
         player: Player,
         audioData: ByteArray,
+        npcUuid: UUID? = null,
     ) {
         try {
             // For now, let's try a very conservative approach for testing
@@ -415,7 +417,6 @@ class ElevenLabsAudioManager(
             val maxChunkSize = 900 * 1024 // 50KB chunks
 
             if (audioData.size <= maxChunkSize) {
-                // Send as single packet
                 plugin.logger.info(
                     "Sending ${audioData.size} bytes of audio to player ${player.name}",
                 )
@@ -424,19 +425,20 @@ class ElevenLabsAudioManager(
                     val user = PacketEvents.getAPI().playerManager.getUser(player)
                     val channelId = "story:play_audio"
 
-                    val packet = WrapperPlayServerPluginMessage(channelId, audioData)
+                    val packetBytes = wrapWithNpcHeader(audioData, npcUuid)
+                    val packet = WrapperPlayServerPluginMessage(channelId, packetBytes)
                     user.sendPacket(packet)
                     plugin.logger.info(
-                        "Successfully sent ${audioData.size} bytes of audio to player ${player.name}",
+                        "Successfully sent ${packetBytes.size} bytes (audio ${audioData.size}) to player ${player.name}",
                     )
                 } catch (e: Exception) {
                     plugin.logger.severe("Failed to send single packet: ${e.message}")
                     // Fall back to chunking
-                    sendAudioInChunks(player, audioData)
+                    sendAudioInChunks(player, audioData, npcUuid)
                 }
             } else {
                 // Always chunk larger files
-                sendAudioInChunks(player, audioData)
+                sendAudioInChunks(player, audioData, npcUuid)
             }
         } catch (e: Exception) {
             plugin.logger.severe(
@@ -579,10 +581,61 @@ class ElevenLabsAudioManager(
         }
     }
 
+    /**
+     * Wraps raw audio bytes with a small header that optionally includes npcUuid.
+     *
+     * Packet format:
+     *  [hasNpcUuid (1 byte, 0 or 1)]
+     *  if hasNpcUuid == 1:
+     *      [uuidLength (4 bytes, big-endian)]
+     *      [uuid UTF-8 bytes]
+     *  [audio bytes...]
+     */
+    private fun wrapWithNpcHeader(
+        audioData: ByteArray,
+        npcUuid: UUID?,
+    ): ByteArray {
+        val hasNpc = npcUuid != null
+
+        if (!hasNpc) {
+            // still prefix the flag so the client can always read 1 byte
+            val result = ByteArray(1 + audioData.size)
+            result[0] = 0 // hasNpcUuid = false
+            System.arraycopy(audioData, 0, result, 1, audioData.size)
+            return result
+        }
+
+        val uuidStr = npcUuid.toString()
+        val uuidBytes = uuidStr.toByteArray(Charsets.UTF_8)
+        val len = uuidBytes.size
+
+        val result = ByteArray(1 + 4 + len + audioData.size)
+        var offset = 0
+
+        // flag
+        result[offset++] = 1 // hasNpcUuid = true
+
+        // uuid length (big-endian)
+        result[offset++] = ((len shr 24) and 0xFF).toByte()
+        result[offset++] = ((len shr 16) and 0xFF).toByte()
+        result[offset++] = ((len shr 8) and 0xFF).toByte()
+        result[offset++] = (len and 0xFF).toByte()
+
+        // uuid bytes
+        System.arraycopy(uuidBytes, 0, result, offset, len)
+        offset += len
+
+        // raw audio data (or chunk header + chunkData)
+        System.arraycopy(audioData, 0, result, offset, audioData.size)
+
+        return result
+    }
+
     /** Send audio data in chunks to avoid packet size limits */
     private fun sendAudioInChunks(
         player: Player,
         audioData: ByteArray,
+        npcUuid: UUID? = null,
     ) {
         try {
             val maxChunkSize = 500 * 1024 // 30KB chunks to be safe
@@ -638,7 +691,8 @@ class ElevenLabsAudioManager(
                 System.arraycopy(chunk, 0, packetData, offset, chunk.size)
 
                 val channelId = "story:play_audio"
-                val packet = WrapperPlayServerPluginMessage(channelId, packetData)
+                val wrapped = wrapWithNpcHeader(packetData, npcUuid)
+                val packet = WrapperPlayServerPluginMessage(channelId, wrapped)
                 user.sendPacket(packet)
 
                 plugin.logger.info(

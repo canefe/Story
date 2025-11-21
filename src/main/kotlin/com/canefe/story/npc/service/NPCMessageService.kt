@@ -5,6 +5,7 @@ import com.canefe.story.conversation.ConversationMessage
 import com.canefe.story.npc.data.NPCContext
 import com.canefe.story.util.EssentialsUtils
 import dev.lone.itemsadder.api.FontImages.FontImageWrapper
+import net.citizensnpcs.api.CitizensAPI
 import net.citizensnpcs.api.npc.NPC
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.minimessage.MiniMessage
@@ -139,10 +140,18 @@ class NPCMessageService(
                 stringBuilder.append(MiniMessage.miniMessage().serialize(component)).append("\n")
             }
 
-            // Create a single component with the typing tags
-            return listOf(
-                MiniMessage.miniMessage().deserialize("<npc_typing>color:$nameColor id:$npcId:$stringBuilder"),
-            )
+            val npc = CitizensAPI.getNPCRegistry().getByUniqueId(npcId)
+
+            val entity = npc.entity.takeIf { npc.isSpawned }
+            val id = entity?.uniqueId
+            if (id != null) {
+                // Create a single component with the typing tags
+                return listOf(
+                    MiniMessage
+                        .miniMessage()
+                        .deserialize("<npc_typing>color:$nameColor id:$id:$stringBuilder"),
+                )
+            }
         }
 
         return parsedMessages
