@@ -227,7 +227,7 @@ class ContextExtractor(
 
     /** Extract current location context for a player */
     private fun extractCurrentLocationContext(player: Player): String? {
-        val actualLocation = plugin.locationManager.getLocationByPosition(player.location, 150.0)
+        val actualLocation = plugin.locationManager.getLocationByPosition2D(player.location, 150.0)
         return if (actualLocation != null) {
             "${player.name} is currently at ${actualLocation.name}.\n" +
                 "Location context: ${actualLocation.getContextForPrompt(plugin.locationManager)}\n"

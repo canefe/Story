@@ -375,7 +375,7 @@ class NPCInteractionListener(
 
         // Check current location
         val entityPos = player.location
-        val actualLocation = plugin.locationManager.getLocationByPosition(entityPos, 150.0)
+        val actualLocation = plugin.locationManager.getLocationByPosition2D(entityPos, 150.0)
 
         if (actualLocation != null && location != null && location.name != actualLocation.name) {
             val locationInfo =

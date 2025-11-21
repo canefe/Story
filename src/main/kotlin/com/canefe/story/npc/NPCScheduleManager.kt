@@ -548,7 +548,7 @@ class NPCScheduleManager private constructor(
         }
 
         // Get story location and potential sublocations
-        val currentStoryLocation = plugin.locationManager.getLocationByPosition(currentLocation, 200.0)
+        val currentStoryLocation = plugin.locationManager.getLocationByPosition2D(currentLocation, 200.0)
 
         // return if no story location is found
         if (currentStoryLocation == null) {

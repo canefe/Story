@@ -114,7 +114,7 @@ class SessionManager private constructor(
                     }
                 ) {
                     // Get the player's current location
-                    val actualLocation = plugin.locationManager.getLocationByPosition(player.location, 150.0)
+                    val actualLocation = plugin.locationManager.getLocationByPosition2D(player.location, 150.0)
                     if (actualLocation != null) {
                         currentPlayerLocation = "${player.name} is currently at ${actualLocation.name}.\n" +
                             "Location context: ${actualLocation.getContextForPrompt(plugin.locationManager)}\n"
@@ -129,7 +129,7 @@ class SessionManager private constructor(
             for (playerName in session.players) {
                 val player = plugin.server.getPlayer(playerName)
                 if (player != null) {
-                    val actualLocation = plugin.locationManager.getLocationByPosition(player.location, 150.0)
+                    val actualLocation = plugin.locationManager.getLocationByPosition2D(player.location, 150.0)
                     if (actualLocation != null) {
                         currentPlayerLocation = "Current scene location: ${actualLocation.name}.\n" +
                             "Location context: ${actualLocation.getContextForPrompt(plugin.locationManager)}\n"

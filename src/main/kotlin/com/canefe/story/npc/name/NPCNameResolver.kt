@@ -28,7 +28,7 @@ class NPCNameResolver(
         resolveCanonicalNameInternal(
             npc.name,
             npc.uniqueId.toString(),
-            plugin.locationManager.getLocationByPosition(npc.entity.location, 150.0)?.name,
+            plugin.locationManager.getLocationByPosition2D(npc.entity.location, 150.0)?.name,
         )
 
     /**
