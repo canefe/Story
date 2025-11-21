@@ -36,10 +36,6 @@ class CreateLocationCommand(
                                 return@PlayerCommandExecutor
                             }
 
-                    // Save initial location (createLocation already saves, but ensure
-                    // persisted)
-                    commandUtils.locationManager.saveLocation(location)
-
                     player.sendSuccess(
                         "Location <gold>'$locationName'</gold> created successfully at your current location.",
                     )
