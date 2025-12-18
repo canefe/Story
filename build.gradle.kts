@@ -51,6 +51,10 @@ repositories {
     maven("https://maven.citizensnpcs.co/repo") { name = "citizensRepo" }
     maven("https://nexus.phoenixdevt.fr/repository/maven-public/") { name = "phoenix" }
     maven("https://repo.byteflux.net/nexus/repository/public/")
+    maven {
+        name = "libraryaddictReleases"
+        url = uri("https://mvn.lib.co.nz/releases")
+    }
     maven("https://libraries.minecraft.net")
     maven("https://jitpack.io/")
     maven("https://repo.alessiodp.com/releases/")
