@@ -118,7 +118,7 @@ class NPCResponseService(
 
         // Check if NPC is spawned to determine actual location
         if (entityPos != null) {
-            val actualLocation = plugin.locationManager.getLocationByPosition(entityPos, 150.0)
+            val actualLocation = plugin.locationManager.getLocationByPosition2D(entityPos, 150.0)
 
             // If actual location exists and differs from context location
             if (actualLocation != null && location != null) {

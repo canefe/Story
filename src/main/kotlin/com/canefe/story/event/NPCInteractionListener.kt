@@ -375,7 +375,7 @@ class NPCInteractionListener(
 
         // Check current location
         val entityPos = player.location
-        val actualLocation = plugin.locationManager.getLocationByPosition(entityPos, 150.0)
+        val actualLocation = plugin.locationManager.getLocationByPosition2D(entityPos, 150.0)
 
         if (actualLocation != null && location != null && location.name != actualLocation.name) {
             val locationInfo =
@@ -543,8 +543,9 @@ class NPCInteractionListener(
             // Then it is us that left the conversation
             if (isAwayFromAll) {
                 plugin.conversationManager.removePlayer(player, conversation)
+                return false // Player left, allow them to start/join a new conversation
             }
-            return false
+            // Player is still nearby, continue with the conversation
         }
 
         // Add the message to the conversation
@@ -677,31 +678,30 @@ class NPCInteractionListener(
         val nearbyPlayers = nearbyEntities.players
 
         val availableNPCs = nearbyNPCs.filter { !plugin.npcManager.isNPCDisabled(it) }
-
-        if (availableNPCs.isNotEmpty()) {
-            val npcsToAdd = ArrayList<NPC>(availableNPCs)
-            val conversation = plugin.conversationManager.startConversation(player, npcsToAdd)
-
-            message?.let { plugin.conversationManager.addPlayerMessage(player, conversation, it) }
-        }
-
         val availablePlayers = nearbyPlayers.filter { !plugin.playerManager.isPlayerDisabled(it) }
 
-        if (availablePlayers.isNotEmpty()) {
-            // check if conversation already exists
-            val existingConversation = plugin.conversationManager.getConversation(player)
-            if (existingConversation != null) {
-                // Add players to existing conversation
+        // Create a single conversation with all participants (NPCs and players)
+        if (availableNPCs.isNotEmpty() || availablePlayers.isNotEmpty()) {
+            val conversation =
+                if (availableNPCs.isNotEmpty()) {
+                    // Start conversation with NPCs
+                    val npcsToAdd = ArrayList<NPC>(availableNPCs)
+                    plugin.conversationManager.startConversation(player, npcsToAdd)
+                } else {
+                    // Start conversation with just players
+                    plugin.conversationManager.startPlayerConversation(player, availablePlayers)
+                }
+
+            // Add any players to the conversation if we started with NPCs
+            if (availableNPCs.isNotEmpty() && availablePlayers.isNotEmpty()) {
                 availablePlayers.forEach { p ->
-                    if (!existingConversation.players.contains(p.uniqueId)) {
-                        plugin.conversationManager.joinConversation(p, existingConversation)
+                    if (!conversation.players.contains(p.uniqueId)) {
+                        plugin.conversationManager.joinConversation(p, conversation)
                     }
                 }
-            } else {
-                val conversation =
-                    plugin.conversationManager.startPlayerConversation(player, availablePlayers)
-                message?.let { plugin.conversationManager.addPlayerMessage(player, conversation, it) }
             }
+
+            message?.let { plugin.conversationManager.addPlayerMessage(player, conversation, it) }
         }
     }
 

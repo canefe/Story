@@ -2,15 +2,17 @@ package com.canefe.story.event
 
 import com.canefe.story.Story
 import org.bukkit.Bukkit
+import org.bukkit.event.HandlerList
 import org.bukkit.event.Listener
 
-class EventManager private constructor(
+class EventManager(
     private val plugin: Story,
 ) {
     private val listeners = mutableListOf<Listener>()
 
     fun registerEvents() {
-        // Create and register all listeners
+        registerListener(PlayerEventListener(plugin))
+
         if (Bukkit.getPluginManager().isPluginEnabled("Citizens")) {
             registerListener(NPCInteractionListener(plugin))
             plugin.logger.info("Citizens detected, NPCInteractionListener registered")
@@ -19,15 +21,16 @@ class EventManager private constructor(
         }
 
         if (Bukkit.getPluginManager().isPluginEnabled("ReviveMe")) {
-            registerListener(PlayerEventListener(plugin))
-            plugin.logger.info("ReviveMe detected, PlayerDownedListener registered")
+            registerListener(ReviveMeEventListener(plugin))
+            plugin.logger.info("ReviveMe detected, ReviveMeEventListener registered")
         } else {
-            plugin.logger.info("ReviveMe not detected, skipping PlayerDownedListener registration")
+            plugin.logger.info("ReviveMe not detected, skipping ReviveMeEventListener registration")
         }
 
         if (Bukkit.getPluginManager().isPluginEnabled("BetterHealthBar")) {
-            registerListener(HealthBarListener())
-            HealthBarListener().onEnable()
+            val healthBarListener = HealthBarListener()
+            registerListener(healthBarListener)
+            healthBarListener.onEnable()
             plugin.logger.info("HealthBar detected, HealthBarListener registered")
         } else {
             plugin.logger.info("HealthBar not detected, skipping HealthBarListener registration")
@@ -42,18 +45,7 @@ class EventManager private constructor(
     }
 
     fun unregisterAll() {
-        // Most events don't need explicit unregistering in Bukkit,
-        // but if you need to do cleanup, you can add that here
+        listeners.forEach { HandlerList.unregisterAll(it) }
         listeners.clear()
-    }
-
-    companion object {
-        private var instance: EventManager? = null
-
-        @JvmStatic
-        fun getInstance(plugin: Story): EventManager =
-            instance ?: synchronized(this) {
-                instance ?: EventManager(plugin).also { instance = it }
-            }
     }
 }

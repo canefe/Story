@@ -146,7 +146,7 @@ class NPCContextGenerator(
 
             // If we have an NPC entity, try to get its location from its stored data
             if (npc != null && npc.isSpawned && npc.entity != null) {
-                val npcLocation = plugin.locationManager.getLocationByPosition(npc.entity.location)
+                val npcLocation = plugin.locationManager.getLocationByPosition2D(npc.entity.location)
                 if (npcLocation != null) {
                     location = npcLocation
                 }

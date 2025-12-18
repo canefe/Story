@@ -81,7 +81,7 @@ class VoiceManager(
                     var successCount = 0
                     for (player in players) {
                         try {
-                            audioManager.sendAudioToPlayer(player, audioData)
+                            audioManager.sendAudioToPlayer(player, audioData, npc.entity?.uniqueId)
                             successCount++
                         } catch (e: Exception) {
                             plugin.logger.warning(
@@ -153,7 +153,7 @@ class VoiceManager(
                     var successCount = 0
                     for (p in players) {
                         try {
-                            audioManager.sendAudioToPlayer(p, audioData)
+                            audioManager.sendAudioToPlayer(p, audioData, player.uniqueId)
                             successCount++
                         } catch (e: Exception) {
                             plugin.logger.warning(
@@ -213,6 +213,7 @@ class VoiceManager(
             text = cleanMessage,
             voiceId = voiceId,
             npcName = npc.name,
+            npc.uniqueId,
         )
     }
 

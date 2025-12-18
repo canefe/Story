@@ -42,7 +42,7 @@ plugins {
 }
 
 group = "com.canefe"
-version = "0.2.1"
+version = "0.3.0"
 
 repositories {
     mavenCentral()
@@ -51,6 +51,10 @@ repositories {
     maven("https://maven.citizensnpcs.co/repo") { name = "citizensRepo" }
     maven("https://nexus.phoenixdevt.fr/repository/maven-public/") { name = "phoenix" }
     maven("https://repo.byteflux.net/nexus/repository/public/")
+    maven {
+        name = "libraryaddictReleases"
+        url = uri("https://mvn.lib.co.nz/public")
+    }
     maven("https://libraries.minecraft.net")
     maven("https://jitpack.io/")
     maven("https://repo.alessiodp.com/releases/")
@@ -238,7 +242,7 @@ fun gitCommitHash(): String =
             standardOutput = stdout
         }
         stdout.toString().trim()
-    } catch (e: Exception) {
+    } catch (_: Exception) {
         "unknown"
     }
 

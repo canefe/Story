@@ -11,6 +11,7 @@ class ConfigService(
         get() = plugin.configFile
 
     // OpenAI API settings
+    var openAIUrl: String = ""
     var openAIKey: String = ""
 
     // Model to use important for AI context generation
@@ -124,7 +125,6 @@ class ConfigService(
             plugin.locationManager.loadAllLocations()
             plugin.questManager.loadConfig()
             plugin.npcMessageService.load()
-            plugin.factionManager.load()
             plugin.playerManager.load()
             plugin.npcManager.loadConfig()
             plugin.relationshipManager.load()
@@ -140,6 +140,7 @@ class ConfigService(
 
     private fun loadConfigValues() {
         openAIKey = config.getString("openrouter.apikey", "") ?: ""
+        openAIUrl = config.getString("openrouter.apiUrl", "") ?: ""
         aiModel =
             config.getString("openrouter.aiModel", "meta-llama/llama-3.3-70b-instruct")
                 ?: "meta-llama/llama-3.3-70b-instruct"
@@ -258,6 +259,7 @@ class ConfigService(
     fun save() {
         // Update all in-memory values back to the config file
         config.set("openrouter.apikey", openAIKey)
+        config.set("openrouter.apiUrl", openAIUrl)
         config.set("openrouter.aiModel", aiModel)
         config.set("openrouter.aiConversationModel", aiConversationModel)
         config.set("openrouter.maxTokens", maxTokens)
