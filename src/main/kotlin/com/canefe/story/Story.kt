@@ -265,9 +265,6 @@ open class Story :
                 worldInformationManager,
             )
 
-        eventManager = EventManager.getInstance(this)
-        eventManager.registerEvents()
-
         aiResponseService = AIResponseService(this)
         relationshipManager = RelationshipManager(this)
         mythicMobConversation = MythicMobConversationIntegration(this)
@@ -275,6 +272,9 @@ open class Story :
         voiceManager = VoiceManager(this)
         npcNameManager = NPCNameManager(this)
         npcNameResolver = NPCNameResolver(this)
+
+        eventManager = EventManager(this)
+        eventManager.registerEvents()
 
         registerQuestBookListener()
     }
